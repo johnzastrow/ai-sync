@@ -22,3 +22,15 @@ export {
 	hasRemote,
 } from "./git/repo.js";
 export { createBackup } from "./core/backup.js";
+export {
+	syncPush,
+	syncPull,
+	syncStatus,
+} from "./core/sync-engine.js";
+export type {
+	SyncOptions,
+	SyncPushResult,
+	SyncPullResult,
+	SyncStatusResult,
+	FileChange,
+} from "./core/sync-engine.js";
