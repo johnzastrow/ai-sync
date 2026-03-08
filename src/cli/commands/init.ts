@@ -87,8 +87,10 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
 		let content = await fs.readFile(sourcePath, "utf-8");
 
 		// Apply path rewriting for settings.json
+		// Derive homeDir from claudeDir (claudeDir is typically ~/.claude, so parent is ~)
 		if (path.basename(relativePath) === "settings.json") {
-			content = rewritePathsForRepo(content, getHomeDir());
+			const homeDir = path.dirname(claudeDir);
+			content = rewritePathsForRepo(content, homeDir);
 		}
 
 		// Write to sync repo
