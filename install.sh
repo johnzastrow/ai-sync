@@ -152,6 +152,13 @@ if [ -z "$GH_USER" ]; then
 fi
 
 REPO_NAME=$(prompt "Repository name" "$DEFAULT_REPO_NAME")
+
+# Sanitize repo name: lowercase, replace spaces/special chars with hyphens, strip leading/trailing hyphens
+REPO_NAME=$(echo "$REPO_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g; s/^-*//; s/-*$//')
+if [ -z "$REPO_NAME" ]; then
+  REPO_NAME="$DEFAULT_REPO_NAME"
+fi
+
 REPO_VISIBILITY=$(prompt "Visibility (private/public)" "private")
 
 # Validate visibility
@@ -164,12 +171,15 @@ esac
 echo ""
 info "Creating $REPO_VISIBILITY repo: $GH_USER/$REPO_NAME"
 
-if gh repo create "$REPO_NAME" --"$REPO_VISIBILITY" --description "Claude Code config synced by claude-sync" 2>/dev/null; then
+GH_CREATE_OUTPUT=$(gh repo create "$REPO_NAME" --"$REPO_VISIBILITY" --description "Claude Code config synced by claude-sync" 2>&1) && {
   ok "GitHub repo created"
-else
-  # Repo may already exist — that's fine, we'll try to use it
-  warn "Could not create repo (may already exist). Continuing..."
-fi
+} || {
+  if echo "$GH_CREATE_OUTPUT" | grep -qi "already exists"; then
+    warn "Repository $GH_USER/$REPO_NAME already exists. Continuing..."
+  else
+    err "Failed to create repo: $GH_CREATE_OUTPUT"
+  fi
+}
 
 REMOTE_URL="git@github.com:$GH_USER/$REPO_NAME.git"
 

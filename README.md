@@ -43,10 +43,8 @@ claude-sync push
 
 ### First machine (where your config already lives)
 
-```bash
-# The installer handles everything — init, repo creation, and first push.
-# If you installed manually, see the manual steps above.
-```
+The one-liner installer handles everything — init, repo creation, and first push.
+If you installed manually, see the manual steps above.
 
 ### Every other machine
 
