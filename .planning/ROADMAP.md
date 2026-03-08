@@ -12,7 +12,7 @@ This roadmap delivers a Git-backed CLI tool that synchronizes ~/.claude across m
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation** - Project scaffolding, init command, default manifest, and path portability
+- [x] **Phase 1: Foundation** - Project scaffolding, init command, default manifest, and path portability
 - [ ] **Phase 2: Sync Operations** - Push, pull, status commands with backup safety and error reporting
 - [ ] **Phase 3: Cross-Platform and Bootstrap** - macOS/Linux/WSL support and one-command new machine setup
 
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md -- Scaffold project and implement core modules (manifest, scanner, path-rewriter)
-- [ ] 01-02-PLAN.md -- Git wrapper, CLI entry point, init command, and integration tests
+- [x] 01-02-PLAN.md -- Git wrapper, CLI entry point, init command, and integration tests
 
 ### Phase 2: Sync Operations
 **Goal**: User can push local changes, pull remote changes, and view sync status -- with automatic backup and clear error reporting on every operation
@@ -70,6 +70,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 1/2 | In progress | - |
+| 1. Foundation | 2/2 | Complete | 2026-03-08 |
 | 2. Sync Operations | 0/0 | Not started | - |
 | 3. Cross-Platform and Bootstrap | 0/0 | Not started | - |
