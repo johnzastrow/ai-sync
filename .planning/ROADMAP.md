@@ -27,11 +27,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. The sync repo contains only user-authored config files (skills, plugins, hooks, CLAUDE.md, settings) and excludes all ephemeral data (projects/, debug/, telemetry/, history)
   3. Absolute paths in settings.json are rewritten to portable tokens (e.g., {{HOME}}) in the repo, so the repo content is machine-independent
   4. A .gitattributes file enforcing LF line endings is present as the first commit artifact
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
+- [ ] 01-01-PLAN.md -- Scaffold project and implement core modules (manifest, scanner, path-rewriter)
+- [ ] 01-02-PLAN.md -- Git wrapper, CLI entry point, init command, and integration tests
 
 ### Phase 2: Sync Operations
 **Goal**: User can push local changes, pull remote changes, and view sync status -- with automatic backup and clear error reporting on every operation
@@ -70,6 +70,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/0 | Not started | - |
+| 1. Foundation | 0/2 | Planning complete | - |
 | 2. Sync Operations | 0/0 | Not started | - |
 | 3. Cross-Platform and Bootstrap | 0/0 | Not started | - |
