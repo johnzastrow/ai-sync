@@ -23,7 +23,7 @@ The installer will:
 
 Run it again to update an existing installation.
 
-Requires: Node.js 22+, git, [GitHub CLI](https://cli.github.com/) (`gh`) for automatic repo creation
+Requires: git, [GitHub CLI](https://cli.github.com/) (`gh`) for automatic repo creation. Node.js 22+ is installed automatically if missing (via fnm, nvm, Homebrew, apt, yum, or direct binary download).
 
 ### Manual
 

@@ -39,14 +39,153 @@ prompt() {
 
 # ── preflight ──────────────────────────────────────────────────────
 
-command -v git  >/dev/null 2>&1 || err "git is required but not installed"
-command -v node >/dev/null 2>&1 || err "Node.js is required but not installed"
-command -v npm  >/dev/null 2>&1 || err "npm is required but not installed"
+command -v git >/dev/null 2>&1 || err "git is required but not installed"
+
+# Check if Node.js 22+ is available
+needs_node() {
+  if ! command -v node >/dev/null 2>&1; then
+    return 0
+  fi
+  local major
+  major=$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')
+  [ "$major" -lt 22 ]
+}
+
+NODE_VERSION="22"
+
+install_node() {
+  info "Node.js 22+ is required. Attempting to install..."
+
+  # 1. Try fnm (fast node manager)
+  if command -v fnm >/dev/null 2>&1; then
+    info "Installing Node.js $NODE_VERSION via fnm..."
+    fnm install "$NODE_VERSION"
+    fnm use "$NODE_VERSION"
+    eval "$(fnm env)"
+    return 0
+  fi
+
+  # 2. Try nvm
+  if [ -n "${NVM_DIR:-}" ] && [ -s "$NVM_DIR/nvm.sh" ]; then
+    info "Installing Node.js $NODE_VERSION via nvm..."
+    # shellcheck source=/dev/null
+    . "$NVM_DIR/nvm.sh"
+    nvm install "$NODE_VERSION"
+    nvm use "$NODE_VERSION"
+    return 0
+  fi
+  # Check common nvm locations even if NVM_DIR isn't set
+  for nvm_path in "$HOME/.nvm/nvm.sh" "/usr/local/opt/nvm/nvm.sh" "/opt/homebrew/opt/nvm/nvm.sh"; do
+    if [ -s "$nvm_path" ]; then
+      info "Installing Node.js $NODE_VERSION via nvm..."
+      export NVM_DIR="$(dirname "$nvm_path")"
+      # shellcheck source=/dev/null
+      . "$nvm_path"
+      nvm install "$NODE_VERSION"
+      nvm use "$NODE_VERSION"
+      return 0
+    fi
+  done
+
+  # 3. Try Homebrew (macOS)
+  if command -v brew >/dev/null 2>&1; then
+    info "Installing Node.js $NODE_VERSION via Homebrew..."
+    brew install "node@$NODE_VERSION"
+    brew link --overwrite "node@$NODE_VERSION"
+    return 0
+  fi
+
+  # Methods below require curl
+  if ! command -v curl >/dev/null 2>&1; then
+    err "No Node.js version manager (fnm/nvm) or Homebrew found, and curl is not available to download Node.js. Install Node.js 22+ manually."
+  fi
+
+  # 4. Try apt (Debian/Ubuntu) via NodeSource
+  if command -v apt-get >/dev/null 2>&1; then
+    info "Installing Node.js $NODE_VERSION via apt (NodeSource)..."
+    if command -v sudo >/dev/null 2>&1; then
+      curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}.x" | sudo -E bash -
+      sudo apt-get install -y nodejs
+    else
+      curl -fsSL "https://deb.nodesource.com/setup_${NODE_VERSION}.x" | bash -
+      apt-get install -y nodejs
+    fi
+    return 0
+  fi
+
+  # 5. Try yum/dnf (RHEL/Fedora/CentOS) via NodeSource
+  if command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+    local pkg_mgr="yum"
+    command -v dnf >/dev/null 2>&1 && pkg_mgr="dnf"
+    info "Installing Node.js $NODE_VERSION via $pkg_mgr (NodeSource)..."
+    if command -v sudo >/dev/null 2>&1; then
+      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VERSION}.x" | sudo bash -
+      sudo $pkg_mgr install -y nodejs
+    else
+      curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VERSION}.x" | bash -
+      $pkg_mgr install -y nodejs
+    fi
+    return 0
+  fi
+
+  # 6. Last resort: download official binary
+  info "No package manager found. Downloading Node.js $NODE_VERSION binary..."
+  local arch os_name
+  arch=$(uname -m)
+  os_name=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+  case "$arch" in
+    x86_64)  arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) err "Unsupported architecture: $arch" ;;
+  esac
+
+  case "$os_name" in
+    linux|darwin) ;;
+    *) err "Unsupported OS: $os_name" ;;
+  esac
+
+  local node_dir="$HOME/.local/node"
+  local tarball_url="https://nodejs.org/dist/latest-v${NODE_VERSION}.x/node-v${NODE_VERSION}.0.0-${os_name}-${arch}.tar.xz"
+
+  # Get the actual latest v22 URL from the index
+  local latest_version
+  latest_version=$(curl -fsSL "https://nodejs.org/dist/latest-v${NODE_VERSION}.x/" | grep -oE "node-v${NODE_VERSION}\.[0-9]+\.[0-9]+" | head -1) || true
+  if [ -n "$latest_version" ]; then
+    tarball_url="https://nodejs.org/dist/latest-v${NODE_VERSION}.x/${latest_version}-${os_name}-${arch}.tar.xz"
+  fi
+
+  local tmp_tar
+  tmp_tar=$(mktemp)
+  curl -fsSL "$tarball_url" -o "$tmp_tar" || err "Failed to download Node.js from $tarball_url"
+
+  mkdir -p "$node_dir"
+  tar -xJf "$tmp_tar" -C "$node_dir" --strip-components=1
+  rm -f "$tmp_tar"
+
+  export PATH="$node_dir/bin:$PATH"
+  ok "Node.js installed to $node_dir"
+  warn "Add Node.js to your PATH permanently:"
+  echo "  export PATH=\"$node_dir/bin:\$PATH\""
+}
+
+if needs_node; then
+  if command -v node >/dev/null 2>&1; then
+    warn "Node.js $(node -v | tr -d v) found, but 22+ is required"
+  fi
+  install_node
+fi
+
+# Verify after install attempt
+command -v node >/dev/null 2>&1 || err "Node.js installation failed — node not found in PATH"
+command -v npm  >/dev/null 2>&1 || err "npm not found after Node.js install"
 
 NODE_MAJOR=$(node -e 'process.stdout.write(process.versions.node.split(".")[0])')
 if [ "$NODE_MAJOR" -lt 22 ]; then
-  err "Node.js 22+ is required (found v$(node -v | tr -d v))"
+  err "Node.js 22+ is required (found v$(node -v | tr -d v) after install attempt)"
 fi
+
+ok "Node.js $(node -v | tr -d v) found"
 
 # ── install ────────────────────────────────────────────────────────
 
