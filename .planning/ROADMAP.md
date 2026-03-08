@@ -58,10 +58,11 @@ Plans:
   2. The tool produces identical behavior on macOS, Linux, and Windows/WSL -- same commands, same output, same file results
   3. Settings.json path tokens expand correctly to the local platform's home directory and path separators
   4. Hook scripts synced across platforms execute without line-ending issues
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md -- Cross-platform path normalization (normalizePath utility, scanner fix, path-rewriter enhancement)
+- [ ] 03-02-PLAN.md -- Bootstrap command (clone remote repo, apply files to ~/.claude, backup existing config)
 
 ## Progress
 
@@ -72,4 +73,4 @@ Phases execute in numeric order: 1 -> 2 -> 3
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/2 | Complete | 2026-03-08 |
 | 2. Sync Operations | 0/2 | Not started | - |
-| 3. Cross-Platform and Bootstrap | 0/0 | Not started | - |
+| 3. Cross-Platform and Bootstrap | 0/2 | Not started | - |
