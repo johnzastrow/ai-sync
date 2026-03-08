@@ -17,7 +17,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Setup
 
-- [ ] **SETUP-01**: User can bootstrap a new machine from an existing remote repo with one command
+- [x] **SETUP-01**: User can bootstrap a new machine from an existing remote repo with one command
 - [x] **SETUP-02**: Tool works identically on macOS, Linux, and Windows/WSL
 
 ### Safety
@@ -71,7 +71,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNC-03 | Phase 2 | Complete |
 | SYNC-04 | Phase 2 | Complete |
 | SYNC-05 | Phase 2 | Complete |
-| SETUP-01 | Phase 3 | Pending |
+| SETUP-01 | Phase 3 | Complete |
 | SETUP-02 | Phase 3 | Complete |
 | SAFE-01 | Phase 2 | Complete |
 | SAFE-02 | Phase 1 | Complete |
