@@ -23,14 +23,14 @@ export function rewritePathsForRepo(content: string, homeDir: string): string {
 		// Also handle forward-slash variant in case content has mixed separators.
 		const forwardSlashHome = homeDir.replaceAll("\\", "/");
 		result = result.replaceAll(forwardSlashHome, "{{HOME}}");
+		// Normalize backslash path separators in {{HOME}}-prefixed paths to forward slashes.
+		// Only needed on Windows where paths use backslashes.
+		result = result.replace(
+			/\{\{HOME\}\}([^"'\s,}]*)/g,
+			(_match, pathPart: string) =>
+				`{{HOME}}${pathPart.replaceAll("\\\\", "/").replaceAll("\\", "/")}`,
+		);
 	}
-	// Normalize backslash path separators in {{HOME}}-prefixed paths to forward slashes.
-	// Handles both single backslashes and JSON-escaped double backslashes after the token.
-	result = result.replace(
-		/\{\{HOME\}\}([^"'\s,}]*)/g,
-		(_match, pathPart: string) =>
-			`{{HOME}}${pathPart.replaceAll("\\\\", "/").replaceAll("\\", "/")}`,
-	);
 	return result;
 }
 
