@@ -10,8 +10,31 @@ function getConfigPath(): string {
 }
 
 /**
+ * Auto-detect which environments are installed by checking whether
+ * their config directories exist on disk.  Falls back to ["claude"]
+ * if none are found (e.g. fresh machine before any tool has run).
+ */
+function detectInstalledEnvironments(): string[] {
+	const detected: string[] = [];
+	for (const env of ALL_ENVIRONMENTS) {
+		try {
+			fs.accessSync(env.getConfigDir());
+			detected.push(env.id);
+		} catch {
+			// Config dir doesn't exist — tool not installed
+		}
+	}
+	return detected.length > 0 ? detected : ["claude"];
+}
+
+/**
  * Returns the list of enabled environment IDs.
- * Defaults to ["claude"] if no config file exists.
+ *
+ * If the user has explicitly configured environments (via `env enable`
+ * or `env disable`), the stored list is used.  Otherwise, environments
+ * are auto-detected by checking which tools have config directories on
+ * disk.  This means a fresh install automatically syncs every tool
+ * that is present — no manual `env enable` required.
  */
 export function getEnabledEnvironments(): string[] {
 	try {
@@ -21,9 +44,9 @@ export function getEnabledEnvironments(): string[] {
 			return parsed;
 		}
 	} catch {
-		// No file or parse error — default to claude only
+		// No file or parse error — fall through to auto-detection
 	}
-	return ["claude"];
+	return detectInstalledEnvironments();
 }
 
 /**
@@ -43,6 +66,30 @@ export function setEnabledEnvironments(ids: string[]): void {
 	const configPath = getConfigPath();
 	fs.mkdirSync(path.dirname(configPath), { recursive: true });
 	fs.writeFileSync(configPath, JSON.stringify(ids, null, 2) + "\n");
+}
+
+/**
+ * Returns true when environments are auto-detected (no explicit config file).
+ */
+export function isAutoDetecting(): boolean {
+	try {
+		fs.accessSync(getConfigPath());
+		return false;
+	} catch {
+		return true;
+	}
+}
+
+/**
+ * Removes the explicit environment config file so that environments
+ * are auto-detected again on the next operation.
+ */
+export function resetEnvironmentConfig(): void {
+	try {
+		fs.unlinkSync(getConfigPath());
+	} catch {
+		// Already absent — nothing to do
+	}
 }
 
 /**
