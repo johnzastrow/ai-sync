@@ -8,7 +8,7 @@ import { performUpdate } from "../../core/updater.js";
 export function registerUpdateCommand(program: Command): void {
 	program
 		.command("update")
-		.description("Check for and apply claude-sync updates")
+		.description("Check for and apply ai-sync updates")
 		.option("--force", "Force check even if checked recently", false)
 		.action(async (opts) => {
 			try {

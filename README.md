@@ -1,12 +1,12 @@
-# claude-sync
+# ai-sync
 
-Git-backed sync for `~/.claude` across macOS, Linux, and Windows/WSL.
+Git-backed sync for AI tool configuration across macOS, Linux, and Windows/WSL.
 
-Keeps your skills, commands, hooks, settings, and CLAUDE.md identical on every machine — no manual copying.
+Keeps your skills, commands, hooks, settings, and CLAUDE.md identical on every machine — no manual copying. Supports both **Claude Code** (`~/.claude`) and **OpenCode** (`~/.config/opencode/`).
 
 ## Why
 
-`~/.claude` is 1.6GB but only ~15MB is your actual config. Generic dotfile managers (chezmoi, yadm) don't know which files matter. claude-sync ships with an opinionated allowlist, rewrites hardcoded paths for cross-platform portability, and backs up your config before every pull.
+`~/.claude` is 1.6GB but only ~15MB is your actual config. Generic dotfile managers (chezmoi, yadm) don't know which files matter. ai-sync ships with an opinionated allowlist, rewrites hardcoded paths for cross-platform portability, and backs up your config before every pull.
 
 ## Install
 
@@ -17,9 +17,10 @@ curl -fsSL https://raw.githubusercontent.com/berlinguyinca/claude-sync/main/inst
 ```
 
 The installer will:
-1. Clone, build, and link the `claude-sync` binary
-2. Ask for a GitHub repo name (default: `claude-config`) and visibility
-3. Create the repo via `gh`, run `claude-sync init`, and push your config
+1. Clone, build, and link the `ai-sync` binary
+2. Ask which environments to sync (Claude Code, OpenCode, or both)
+3. Ask for a GitHub repo name (default: `ai-config`) and visibility
+4. Create the repo via `gh`, run `ai-sync init`, and push your config
 
 Run it again to update an existing installation.
 
@@ -34,9 +35,22 @@ npm install
 npm run build
 npm link
 
-claude-sync init
-cd ~/.claude-sync && git remote add origin git@github.com:you/claude-config.git
-claude-sync push
+ai-sync init
+cd ~/.ai-sync && git remote add origin git@github.com:you/ai-config.git
+ai-sync push
+```
+
+### Migrating from claude-sync
+
+If you previously used `claude-sync`, the installer automatically:
+- Renames `~/.claude-sync-cli` to `~/.ai-sync-cli`
+- Renames `~/.claude-sync` to `~/.ai-sync`
+- Removes old `claude-sync` symlinks
+
+To migrate your sync repo from flat (v1) to multi-environment (v2) format:
+
+```bash
+ai-sync migrate
 ```
 
 ## Quick Start
@@ -49,132 +63,170 @@ If you installed manually, see the manual steps above.
 ### Every other machine
 
 ```bash
-# One command — clones the repo and applies config to ~/.claude
-claude-sync bootstrap git@github.com:you/claude-config.git
+# One command — clones the repo and applies config to local directories
+ai-sync bootstrap git@github.com:you/ai-config.git
 ```
 
-Done. Your `~/.claude` is now identical across machines.
+Done. Your config is now identical across machines.
 
 ### Keeping in sync
 
 ```bash
 # After changing config on any machine
-claude-sync push
+ai-sync push
 
 # On other machines, pull the changes
-claude-sync pull     # backs up current state first
+ai-sync pull     # backs up current state first
 
 # Check what's changed
-claude-sync status
+ai-sync status
 ```
 
 ## Commands
 
-### `claude-sync init`
+### `ai-sync init`
 
-Creates a git-backed sync repo at `~/.claude-sync` from your existing `~/.claude` directory.
+Creates a git-backed sync repo at `~/.ai-sync` from your existing config directories.
 
-- Scans `~/.claude` through the allowlist manifest
-- Copies only config files (skips 1.6GB of ephemeral data)
-- Rewrites absolute paths in `settings.json` to portable `{{HOME}}` tokens
+- Scans enabled environments through their allowlist manifests
+- Copies only config files (skips ephemeral data)
+- Rewrites absolute paths in `settings.json` / `opencode.json` to portable `{{HOME}}` tokens
 - Creates `.gitattributes` enforcing LF line endings
 - Makes an initial commit
 
 ```bash
-claude-sync init                    # default location ~/.claude-sync
-claude-sync init --repo-path ~/my-sync  # custom location
-claude-sync init --force            # re-initialize existing repo
+ai-sync init                    # default location ~/.ai-sync
+ai-sync init --repo-path ~/my-sync  # custom location
+ai-sync init --force            # re-initialize existing repo
 ```
 
-### `claude-sync push`
+### `ai-sync push`
 
-Scans `~/.claude` for changes, copies updated files to the sync repo with path rewriting, commits, and pushes to the remote.
+Scans config directories for changes, copies updated files to the sync repo with path rewriting, commits, and pushes to the remote.
 
 ```bash
-claude-sync push
-claude-sync push -v               # show detailed file changes
+ai-sync push
+ai-sync push -v               # show detailed file changes
 ```
 
-Output:
-```
-Pushed 3 files to remote
-```
+### `ai-sync pull`
 
-### `claude-sync pull`
-
-Fetches remote changes and applies them to `~/.claude`. Always creates a timestamped backup first.
+Fetches remote changes and applies them to local config directories. Always creates a timestamped backup first.
 
 ```bash
-claude-sync pull
-claude-sync pull -v               # show detailed file changes
+ai-sync pull
+ai-sync pull -v               # show detailed file changes
 ```
 
-Output:
-```
-Pulled 5 files from remote
-Backup saved to: /Users/you/.claude-sync-backups/2026-03-08T14-30-00
-```
-
-### `claude-sync status`
+### `ai-sync status`
 
 Shows local modifications, remote drift, and excluded file count.
 
 ```bash
-claude-sync status
-claude-sync status -v             # include branch, tracking info, synced file count
+ai-sync status
+ai-sync status -v             # include branch, tracking info, synced file count
 ```
 
-Output:
-```
-Local changes:
-  M settings.json
-  A commands/my-new-command.md
-Remote is 2 commit(s) ahead -- run 'claude-sync pull'
-Excluded: 847 files (not in sync manifest)
-```
+### `ai-sync bootstrap <repo-url>`
 
-### `claude-sync bootstrap <repo-url>`
-
-Sets up a new machine from an existing remote sync repo. Clones the repo, applies files to `~/.claude` with path expansion, backs up any existing config, and installs skills.
+Sets up a new machine from an existing remote sync repo. Clones the repo, applies files to config directories with path expansion, backs up any existing config, and installs skills.
 
 ```bash
-claude-sync bootstrap git@github.com:you/claude-config.git
-claude-sync bootstrap https://github.com/you/claude-config.git
-claude-sync bootstrap <url> --force   # re-clone if sync repo exists
+ai-sync bootstrap git@github.com:you/ai-config.git
+ai-sync bootstrap https://github.com/you/ai-config.git
+ai-sync bootstrap <url> --force   # re-clone if sync repo exists
 ```
 
-### `claude-sync update`
+### `ai-sync update`
 
-Checks for and applies tool updates. claude-sync also checks automatically once every 24 hours on startup (disable with `--no-update-check`).
+Checks for and applies tool updates. ai-sync also checks automatically once every 24 hours on startup (disable with `--no-update-check`).
 
 ```bash
-claude-sync update
-claude-sync update --force        # check even if checked recently
+ai-sync update
+ai-sync update --force        # check even if checked recently
 ```
 
-### `claude-sync install-skills`
+### `ai-sync install-skills`
 
-Installs Claude Code slash commands (like `/sync`) into `~/.claude/commands/`. This runs automatically during `init` and `bootstrap`, but you can run it manually after updating.
+Installs slash commands (like `/sync`) into config directories for all enabled environments. This runs automatically during `init` and `bootstrap`, but you can run it manually after updating.
 
 ```bash
-claude-sync install-skills
+ai-sync install-skills
+```
+
+### `ai-sync env`
+
+Manage which tool environments are synced.
+
+```bash
+ai-sync env list              # show all environments and their status
+ai-sync env enable opencode   # enable OpenCode syncing
+ai-sync env disable opencode  # disable OpenCode syncing
+```
+
+### `ai-sync migrate`
+
+Migrates a v1 (flat, Claude-only) sync repo to v2 (subdirectory, multi-environment) format. This moves all root-level files into a `claude/` subdirectory and writes a `.sync-version` marker.
+
+```bash
+ai-sync migrate
 ```
 
 ### The `/sync` skill
 
-After installation, you can type `/sync` inside Claude Code to pull, push, and check status in one step — no need to leave the conversation.
+After installation, you can type `/sync` inside Claude Code or OpenCode to pull, push, and check status in one step — no need to leave the conversation.
 
 ### Global options
 
 ```bash
-claude-sync --no-update-check <command>   # skip the auto-update check
-claude-sync --version                      # show version
-claude-sync --help                         # show help
+ai-sync --no-update-check <command>   # skip the auto-update check
+ai-sync --version                      # show version
+ai-sync --help                         # show help
 ```
+
+## Environments
+
+ai-sync supports multiple AI tool environments:
+
+| Environment | Config Dir | Skills Dir | Path Rewrite |
+|-------------|-----------|------------|-------------|
+| Claude Code | `~/.claude` | `commands/` | `settings.json` |
+| OpenCode | `~/.config/opencode/` | `command/` | `opencode.json` |
+
+By default, only Claude Code is enabled. Use `ai-sync env enable opencode` to add OpenCode support.
+
+### Repo structure
+
+**v1 (legacy, flat):**
+```
+~/.ai-sync/
+├── CLAUDE.md
+├── settings.json
+├── commands/
+└── ...
+```
+
+**v2 (multi-environment):**
+```
+~/.ai-sync/
+├── .sync-version          # contains "2"
+├── claude/
+│   ├── CLAUDE.md
+│   ├── settings.json
+│   ├── commands/
+│   └── ...
+└── opencode/
+    ├── opencode.json
+    ├── settings.json
+    ├── command/
+    └── ...
+```
+
+Use `ai-sync migrate` to move from v1 to v2 format.
 
 ## What syncs (and what doesn't)
 
-### Synced (your config — ~15MB)
+### Claude Code — Synced (~15MB)
 
 | Path | What it is |
 |------|-----------|
@@ -190,7 +242,20 @@ claude-sync --help                         # show help
 | `plugins/known_marketplaces.json` | Marketplace registry |
 | `plugins/marketplaces/` | Marketplace configs |
 
-### Excluded (machine-local — ~1.6GB)
+### OpenCode — Synced
+
+| Path | What it is |
+|------|-----------|
+| `opencode.json` | Main config (paths auto-rewritten) |
+| `settings.json` | Settings |
+| `agents/` | Agent definitions |
+| `command/` | Custom slash commands (singular!) |
+| `hooks/` | Hook scripts |
+| `get-shit-done/` | GSD framework |
+| `package.json` | Dependencies |
+| `gsd-file-manifest.json` | Framework state |
+
+### Claude Code — Excluded (machine-local — ~1.6GB)
 
 `projects/`, `history.jsonl`, `debug/`, `telemetry/`, `session-env/`, `shell-snapshots/`, `statsig/`, `file-history/`, `todos/`, `plans/`, `paste-cache/`, `ide/`, `cache/`, `backups/`, `downloads/`, `tasks/`, `plugins/install-counts-cache.json`
 
@@ -198,7 +263,7 @@ These are session data, caches, and logs that regenerate automatically and would
 
 ## Path portability
 
-`settings.json` contains absolute paths like `/Users/you/.claude/hooks/my-hook.js` that break on other machines. claude-sync handles this transparently:
+`settings.json` and `opencode.json` contain absolute paths like `/Users/you/.claude/hooks/my-hook.js` that break on other machines. ai-sync handles this transparently:
 
 - **On push/init:** Rewrites `/Users/you` to `{{HOME}}` in the sync repo
 - **On pull/bootstrap:** Expands `{{HOME}}` back to the local machine's home directory
@@ -208,7 +273,7 @@ You never see the tokens — they exist only in the git repo.
 
 ## Safety
 
-- **Backup before pull/bootstrap:** Current `~/.claude` state is saved to a timestamped directory in `~/.claude-sync-backups/` before any destructive operation
+- **Backup before pull/bootstrap:** Current config state is saved to a timestamped directory in `~/.ai-sync-backups/` before any destructive operation
 - **Line endings:** `.gitattributes` enforces LF everywhere — hook scripts won't break when synced from macOS to Linux
 - **Clear errors:** Every operation reports user-friendly success/failure messages. No raw stack traces for expected errors (missing remote, auth failure, etc.)
 - **No secrets:** The allowlist excludes everything except config files. No credentials, tokens, or session data are synced.
@@ -216,17 +281,19 @@ You never see the tokens — they exist only in the git repo.
 ## How it works
 
 ```
-~/.claude (1.6GB)                    ~/.claude-sync (git repo)
-├── CLAUDE.md          ──sync──►     ├── CLAUDE.md
-├── settings.json      ──rewrite──►  ├── settings.json ({{HOME}} tokens)
-├── commands/          ──sync──►     ├── commands/
-├── agents/            ──sync──►     ├── agents/
-├── hooks/             ──sync──►     ├── hooks/
-├── projects/          ✗ excluded    ├── .gitattributes (LF enforcement)
-├── history.jsonl      ✗ excluded    └── .git/
-├── debug/             ✗ excluded         └── remote → GitHub
-├── telemetry/         ✗ excluded
-└── ... (16 more)      ✗ excluded
+~/.claude (1.6GB)                    ~/.ai-sync (git repo)
+├── CLAUDE.md          ──sync──►     ├── .sync-version
+├── settings.json      ──rewrite──►  ├── claude/
+├── commands/          ──sync──►     │   ├── CLAUDE.md
+├── agents/            ──sync──►     │   ├── settings.json ({{HOME}} tokens)
+├── hooks/             ──sync──►     │   ├── commands/
+├── projects/          ✗ excluded    │   └── ...
+├── history.jsonl      ✗ excluded    ├── opencode/
+├── debug/             ✗ excluded    │   ├── opencode.json ({{HOME}} tokens)
+├── telemetry/         ✗ excluded    │   ├── command/
+└── ... (16 more)      ✗ excluded    │   └── ...
+                                     ├── .gitattributes
+                                     └── .git/ → remote
 ```
 
 The sync repo is a standard git repository. You can inspect it, view history, and resolve conflicts with normal git tools.
@@ -238,7 +305,7 @@ git clone https://github.com/berlinguyinca/claude-sync.git
 cd claude-sync
 npm install
 
-# Run tests (109 tests)
+# Run tests
 npm test
 
 # Type check
@@ -259,13 +326,15 @@ src/
 │   ├── index.ts              # Commander.js entry point
 │   ├── format.ts             # Colored output formatting
 │   └── commands/
-│       ├── init.ts           # claude-sync init
-│       ├── push.ts           # claude-sync push
-│       ├── pull.ts           # claude-sync pull
-│       ├── status.ts         # claude-sync status
-│       ├── bootstrap.ts      # claude-sync bootstrap
-│       ├── update.ts         # claude-sync update
-│       └── install-skills.ts # claude-sync install-skills
+│       ├── init.ts           # ai-sync init
+│       ├── push.ts           # ai-sync push
+│       ├── pull.ts           # ai-sync pull
+│       ├── status.ts         # ai-sync status
+│       ├── bootstrap.ts      # ai-sync bootstrap
+│       ├── update.ts         # ai-sync update
+│       ├── install-skills.ts # ai-sync install-skills
+│       ├── env.ts            # ai-sync env list|enable|disable
+│       └── migrate.ts        # ai-sync migrate
 ├── core/
 │   ├── manifest.ts           # Allowlist of sync targets
 │   ├── scanner.ts            # Directory scanner filtered by manifest
@@ -273,7 +342,10 @@ src/
 │   ├── backup.ts             # Timestamped backup creation
 │   ├── sync-engine.ts        # Push/pull/status orchestration
 │   ├── updater.ts            # Auto-update mechanism
-│   └── skills.ts             # Skill installation (/sync command)
+│   ├── skills.ts             # Skill installation (/sync command)
+│   ├── environment.ts        # Environment definitions (Claude, OpenCode)
+│   ├── env-config.ts         # Per-machine environment preferences
+│   └── migration.ts          # v1→v2 repo migration
 ├── git/
 │   └── repo.ts               # Git operations wrapper (simple-git)
 ├── platform/
@@ -281,7 +353,8 @@ src/
 └── index.ts                  # Library exports
 
 skills/
-└── sync.md                   # /sync Claude Code slash command
+├── sync.md                   # /sync slash command
+└── opencode-sync.md          # /sync for OpenCode
 ```
 
 ## License

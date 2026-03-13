@@ -33,21 +33,33 @@ export const PLUGIN_IGNORE_PATTERNS: readonly string[] = [
 ] as const;
 
 /**
- * Checks whether a relative path (relative to ~/.claude) is allowed by the sync manifest.
+ * Checks whether a relative path is allowed by the sync manifest.
  *
  * Allowlist behavior: only known paths are included, everything else is rejected.
  * Ignore patterns take priority over sync patterns.
+ *
+ * Accepts optional custom lists for environment-specific allowlists.
+ * Falls back to the defaults (Claude Code targets) when not provided.
  */
-export function isPathAllowed(relativePath: string): boolean {
+export function isPathAllowed(
+	relativePath: string,
+	syncTargets?: readonly string[],
+	pluginPatterns?: readonly string[],
+	ignorePatterns?: readonly string[],
+): boolean {
+	const targets = syncTargets ?? DEFAULT_SYNC_TARGETS;
+	const plugins = pluginPatterns ?? PLUGIN_SYNC_PATTERNS;
+	const ignores = ignorePatterns ?? PLUGIN_IGNORE_PATTERNS;
+
 	// Check ignore patterns first (these always win)
-	for (const pattern of PLUGIN_IGNORE_PATTERNS) {
+	for (const pattern of ignores) {
 		if (relativePath === pattern) {
 			return false;
 		}
 	}
 
-	// Check default sync targets
-	for (const target of DEFAULT_SYNC_TARGETS) {
+	// Check sync targets
+	for (const target of targets) {
 		if (target.endsWith("/")) {
 			// Directory target: match any file nested under it
 			if (relativePath.startsWith(target)) {
@@ -62,7 +74,7 @@ export function isPathAllowed(relativePath: string): boolean {
 	}
 
 	// Check plugin sync patterns
-	for (const pattern of PLUGIN_SYNC_PATTERNS) {
+	for (const pattern of plugins) {
 		if (pattern.endsWith("/")) {
 			// Directory pattern: match any file nested under it
 			if (relativePath.startsWith(pattern)) {

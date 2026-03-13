@@ -4,6 +4,10 @@ import type { Command } from "commander";
 import pc from "picocolors";
 import { simpleGit } from "simple-git";
 import { createBackup } from "../../core/backup.js";
+import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
+import type { Environment } from "../../core/environment.js";
+import { isPathAllowed } from "../../core/manifest.js";
+import { detectRepoVersion } from "../../core/migration.js";
 import { expandPathsForLocal } from "../../core/path-rewriter.js";
 import { scanDirectory } from "../../core/scanner.js";
 import { installSkills } from "../../core/skills.js";
@@ -25,15 +29,29 @@ export interface BootstrapResult {
 	message: string;
 }
 
+function makeAllowlistFn(env: Environment): (relativePath: string) => boolean {
+	return (relativePath: string) =>
+		isPathAllowed(
+			relativePath,
+			env.getSyncTargets(),
+			env.getPluginSyncPatterns(),
+			env.getIgnorePatterns(),
+		);
+}
+
+function needsPathRewrite(relativePath: string, env: Environment): boolean {
+	const targets = env.getPathRewriteTargets();
+	return targets.some((t) => path.basename(relativePath) === t);
+}
+
 /**
  * Core bootstrap logic: clones a remote sync repo and applies its files locally.
- * This is the inverse of init -- instead of creating a sync repo from local config,
- * it clones a remote repo and applies its contents to ~/.claude.
  */
 export async function handleBootstrap(options: BootstrapOptions): Promise<BootstrapResult> {
 	const syncRepoDir = options.repoPath ?? getSyncRepoDir();
 	const claudeDir = options.claudeDir ?? getClaudeDir();
 	const homeDir = path.dirname(claudeDir);
+	const environments = getEnabledEnvironmentInstances();
 
 	// Guard: sync repo must not already exist (unless --force)
 	if (await isGitRepo(syncRepoDir)) {
@@ -51,45 +69,104 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		throw new Error(`Clone failed: check your repository URL and authentication. Details: ${msg}`);
 	}
 
-	// Create ~/.claude if it doesn't exist (new machine)
-	await fs.mkdir(claudeDir, { recursive: true });
-
-	// Backup existing config if any allowlisted files exist
+	const version = await detectRepoVersion(syncRepoDir);
 	let backupDir: string | null = null;
-	try {
-		const existingFiles = await scanDirectory(claudeDir);
-		if (existingFiles.length > 0) {
-			const backupBaseDir = path.join(path.dirname(syncRepoDir), ".claude-sync-backups");
-			backupDir = await createBackup(claudeDir, backupBaseDir);
-		}
-	} catch {
-		// No existing files or claudeDir just created -- expected on new machine
-	}
+	let totalApplied = 0;
 
-	// Apply repo files to claudeDir (same logic as syncPull)
-	const repoFiles = await scanDirectory(syncRepoDir);
-	for (const relativePath of repoFiles) {
-		const srcPath = path.join(syncRepoDir, relativePath);
-		const destPath = path.join(claudeDir, relativePath);
-		await fs.mkdir(path.dirname(destPath), { recursive: true });
-		let content = await fs.readFile(srcPath, "utf-8");
-		if (path.basename(relativePath) === "settings.json") {
-			content = expandPathsForLocal(content, homeDir);
-		}
-		await fs.writeFile(destPath, content);
-	}
+	if (version === 2 && environments.length > 0) {
+		// v2 multi-environment mode
+		for (const env of environments) {
+			const configDir = env.id === "claude" ? claudeDir : env.getConfigDir();
+			const envHomeDir = path.dirname(configDir);
+			const repoSubdir = path.join(syncRepoDir, env.id);
+			const allowlistFn = makeAllowlistFn(env);
 
-	// Install Claude Code skills (e.g., /sync command)
-	await installSkills(claudeDir);
+			// Create config dir if needed
+			await fs.mkdir(configDir, { recursive: true });
+
+			// Backup existing config
+			try {
+				const existingFiles = await scanDirectory(configDir, allowlistFn);
+				if (existingFiles.length > 0) {
+					const backupBaseDir = path.join(path.dirname(syncRepoDir), ".ai-sync-backups");
+					if (!backupDir) {
+						const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+						backupDir = path.join(backupBaseDir, timestamp);
+					}
+					const envBackupDir = path.join(backupDir, env.id);
+					await fs.mkdir(envBackupDir, { recursive: true });
+					for (const relativePath of existingFiles) {
+						const srcPath = path.join(configDir, relativePath);
+						const destPath = path.join(envBackupDir, relativePath);
+						await fs.mkdir(path.dirname(destPath), { recursive: true });
+						await fs.copyFile(srcPath, destPath);
+					}
+				}
+			} catch {
+				// No existing files
+			}
+
+			// Apply repo files to config dir
+			try {
+				const repoFiles = await scanDirectory(repoSubdir, allowlistFn);
+				for (const relativePath of repoFiles) {
+					const srcPath = path.join(repoSubdir, relativePath);
+					const destPath = path.join(configDir, relativePath);
+					await fs.mkdir(path.dirname(destPath), { recursive: true });
+					let content = await fs.readFile(srcPath, "utf-8");
+					if (needsPathRewrite(relativePath, env)) {
+						content = expandPathsForLocal(content, envHomeDir);
+					}
+					await fs.writeFile(destPath, content);
+				}
+				totalApplied += repoFiles.length;
+			} catch {
+				// No subdir for this env in repo
+			}
+		}
+
+		// Install skills for all environments
+		await installSkills(claudeDir, environments);
+	} else {
+		// v1 flat mode
+		await fs.mkdir(claudeDir, { recursive: true });
+
+		// Backup existing config
+		try {
+			const existingFiles = await scanDirectory(claudeDir);
+			if (existingFiles.length > 0) {
+				const backupBaseDir = path.join(path.dirname(syncRepoDir), ".ai-sync-backups");
+				backupDir = await createBackup(claudeDir, backupBaseDir);
+			}
+		} catch {
+			// No existing files
+		}
+
+		// Apply repo files
+		const repoFiles = await scanDirectory(syncRepoDir);
+		for (const relativePath of repoFiles) {
+			const srcPath = path.join(syncRepoDir, relativePath);
+			const destPath = path.join(claudeDir, relativePath);
+			await fs.mkdir(path.dirname(destPath), { recursive: true });
+			let content = await fs.readFile(srcPath, "utf-8");
+			if (path.basename(relativePath) === "settings.json") {
+				content = expandPathsForLocal(content, homeDir);
+			}
+			await fs.writeFile(destPath, content);
+		}
+		totalApplied = repoFiles.length;
+
+		await installSkills(claudeDir);
+	}
 
 	return {
 		syncRepoDir,
 		claudeDir,
-		filesApplied: repoFiles.length,
+		filesApplied: totalApplied,
 		backupDir,
 		message: backupDir
-			? `Bootstrapped ${repoFiles.length} files from ${options.repoUrl}. Backup at: ${backupDir}`
-			: `Bootstrapped ${repoFiles.length} files from ${options.repoUrl}`,
+			? `Bootstrapped ${totalApplied} files from ${options.repoUrl}. Backup at: ${backupDir}`
+			: `Bootstrapped ${totalApplied} files from ${options.repoUrl}`,
 	};
 }
 
@@ -114,7 +191,7 @@ export function registerBootstrapCommand(program: Command): void {
 					});
 					console.log(pc.green(`Bootstrapped ${result.filesApplied} files from remote`));
 					console.log(pc.green(`  Sync repo: ${result.syncRepoDir}`));
-					console.log(pc.green(`  Claude dir: ${result.claudeDir}`));
+					console.log(pc.green(`  Config dir: ${result.claudeDir}`));
 					if (result.backupDir) {
 						console.log(pc.yellow(`  Backup of existing config: ${result.backupDir}`));
 					}

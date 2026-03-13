@@ -1,4 +1,4 @@
-Synchronize AI tool configuration across machines using ai-sync.
+Synchronize OpenCode configuration across machines using ai-sync.
 
 Run the following commands in sequence using the Bash tool and report the results:
 

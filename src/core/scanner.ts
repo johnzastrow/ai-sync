@@ -4,13 +4,19 @@ import { normalizePath } from "../platform/paths.js";
 import { isPathAllowed } from "./manifest.js";
 
 /**
- * Scans a source directory and returns all files that match the sync manifest allowlist.
+ * Scans a source directory and returns all files that match the allowlist.
  *
- * @param sourceDir - Absolute path to the directory to scan (typically ~/.claude)
+ * @param sourceDir - Absolute path to the directory to scan
+ * @param allowlistFn - Optional custom allowlist function. Defaults to isPathAllowed().
  * @returns Sorted array of relative paths (relative to sourceDir) for allowed files
  * @throws Error if sourceDir does not exist
  */
-export async function scanDirectory(sourceDir: string): Promise<string[]> {
+export async function scanDirectory(
+	sourceDir: string,
+	allowlistFn?: (relativePath: string) => boolean,
+): Promise<string[]> {
+	const checkAllowed = allowlistFn ?? isPathAllowed;
+
 	// Verify source directory exists
 	try {
 		await fs.access(sourceDir);
@@ -40,7 +46,7 @@ export async function scanDirectory(sourceDir: string): Promise<string[]> {
 			continue;
 		}
 
-		if (isPathAllowed(relativePath)) {
+		if (checkAllowed(relativePath)) {
 			allowedFiles.push(relativePath);
 		}
 	}
