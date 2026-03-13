@@ -4,6 +4,8 @@ export { createBackup } from "./core/backup.js";
 export {
 	getEnabledEnvironmentInstances,
 	getEnabledEnvironments,
+	isAutoDetecting,
+	resetEnvironmentConfig,
 	setEnabledEnvironments,
 } from "./core/env-config.js";
 export { makeAllowlistFn, needsPathRewrite } from "./core/env-helpers.js";

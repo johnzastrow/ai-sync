@@ -1,6 +1,11 @@
 import type { Command } from "commander";
 import pc from "picocolors";
-import { getEnabledEnvironments, setEnabledEnvironments } from "../../core/env-config.js";
+import {
+	getEnabledEnvironments,
+	isAutoDetecting,
+	resetEnvironmentConfig,
+	setEnabledEnvironments,
+} from "../../core/env-config.js";
 import { ALL_ENVIRONMENTS, getEnvironmentById } from "../../core/environment.js";
 
 /**
@@ -13,6 +18,13 @@ export function registerEnvCommand(program: Command): void {
 		.command("list")
 		.description("Show all environments and their enabled status")
 		.action(() => {
+			const auto = isAutoDetecting();
+			if (auto) {
+				console.log(pc.dim("  Mode: auto-detect (syncing every installed tool)"));
+			} else {
+				console.log(pc.dim("  Mode: manual (run 'ai-sync env reset' to re-enable auto-detect)"));
+			}
+			console.log();
 			const enabled = new Set(getEnabledEnvironments());
 			for (const env of ALL_ENVIRONMENTS) {
 				const status = enabled.has(env.id) ? pc.green("enabled") : pc.dim("disabled");
@@ -66,5 +78,15 @@ export function registerEnvCommand(program: Command): void {
 			}
 			setEnabledEnvironments(updated);
 			console.log(pc.green(`Disabled ${env.displayName}`));
+		});
+
+	envCmd
+		.command("reset")
+		.description("Switch back to auto-detection (sync every installed tool)")
+		.action(() => {
+			resetEnvironmentConfig();
+			const detected = getEnabledEnvironments();
+			console.log(pc.green("Switched to auto-detect mode"));
+			console.log(pc.dim(`  Detected environments: ${detected.join(", ")}`));
 		});
 }

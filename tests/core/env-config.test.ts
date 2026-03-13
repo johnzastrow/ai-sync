@@ -17,6 +17,8 @@ let testInstallDir: string;
 import {
 	getEnabledEnvironmentInstances,
 	getEnabledEnvironments,
+	isAutoDetecting,
+	resetEnvironmentConfig,
 	setEnabledEnvironments,
 } from "../../src/core/env-config.js";
 
@@ -30,9 +32,13 @@ describe("env-config", () => {
 	});
 
 	describe("getEnabledEnvironments", () => {
-		it("defaults to ['claude'] when no config file exists", () => {
+		it("auto-detects installed environments when no config file exists", () => {
 			const result = getEnabledEnvironments();
-			expect(result).toEqual(["claude"]);
+			// Should contain at least "claude" (since ~/.claude exists on dev machines)
+			// and may contain "opencode" if installed.  The key point is that it
+			// doesn't return an empty list and every id is a known environment.
+			expect(result.length).toBeGreaterThanOrEqual(1);
+			expect(result).toContain("claude");
 		});
 
 		it("reads environments from config file", () => {
@@ -44,16 +50,18 @@ describe("env-config", () => {
 			expect(result).toEqual(["claude", "opencode"]);
 		});
 
-		it("defaults to ['claude'] if config file is malformed", () => {
+		it("falls back to auto-detect if config file is malformed", () => {
 			fs.writeFileSync(path.join(testInstallDir, ".environments.json"), "not valid json");
 			const result = getEnabledEnvironments();
-			expect(result).toEqual(["claude"]);
+			expect(result.length).toBeGreaterThanOrEqual(1);
+			expect(result).toContain("claude");
 		});
 
-		it("defaults to ['claude'] if config contains non-strings", () => {
+		it("falls back to auto-detect if config contains non-strings", () => {
 			fs.writeFileSync(path.join(testInstallDir, ".environments.json"), JSON.stringify([1, 2, 3]));
 			const result = getEnabledEnvironments();
-			expect(result).toEqual(["claude"]);
+			expect(result.length).toBeGreaterThanOrEqual(1);
+			expect(result).toContain("claude");
 		});
 	});
 
@@ -70,6 +78,30 @@ describe("env-config", () => {
 
 		it("throws when trying to set empty array", () => {
 			expect(() => setEnabledEnvironments([])).toThrow(/at least one environment/i);
+		});
+	});
+
+	describe("isAutoDetecting", () => {
+		it("returns true when no config file exists", () => {
+			expect(isAutoDetecting()).toBe(true);
+		});
+
+		it("returns false after setEnabledEnvironments is called", () => {
+			setEnabledEnvironments(["claude"]);
+			expect(isAutoDetecting()).toBe(false);
+		});
+	});
+
+	describe("resetEnvironmentConfig", () => {
+		it("removes config file and restores auto-detect", () => {
+			setEnabledEnvironments(["claude"]);
+			expect(isAutoDetecting()).toBe(false);
+			resetEnvironmentConfig();
+			expect(isAutoDetecting()).toBe(true);
+		});
+
+		it("is safe to call when no config file exists", () => {
+			expect(() => resetEnvironmentConfig()).not.toThrow();
 		});
 	});
 

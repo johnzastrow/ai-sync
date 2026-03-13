@@ -13,7 +13,12 @@ vi.mock("../../src/platform/paths.js", async (importOriginal) => {
 
 let testInstallDir: string;
 
-import { getEnabledEnvironments, setEnabledEnvironments } from "../../src/core/env-config.js";
+import {
+	getEnabledEnvironments,
+	isAutoDetecting,
+	resetEnvironmentConfig,
+	setEnabledEnvironments,
+} from "../../src/core/env-config.js";
 import { ALL_ENVIRONMENTS, getEnvironmentById } from "../../src/core/environment.js";
 
 describe("env command logic", () => {
@@ -42,11 +47,12 @@ describe("env command logic", () => {
 	});
 
 	describe("env enable", () => {
-		it("enables a new environment", () => {
-			const initial = getEnabledEnvironments();
-			expect(initial).toEqual(["claude"]);
+		it("enables a new environment explicitly", () => {
+			// Start with explicit config so we control the baseline
+			setEnabledEnvironments(["claude"]);
+			expect(getEnabledEnvironments()).toEqual(["claude"]);
 
-			setEnabledEnvironments([...initial, "opencode"]);
+			setEnabledEnvironments(["claude", "opencode"]);
 			expect(getEnabledEnvironments()).toEqual(["claude", "opencode"]);
 		});
 
@@ -71,6 +77,18 @@ describe("env command logic", () => {
 
 		it("cannot disable all environments", () => {
 			expect(() => setEnabledEnvironments([])).toThrow(/at least one environment/i);
+		});
+	});
+
+	describe("env reset", () => {
+		it("removes config and switches back to auto-detect", () => {
+			setEnabledEnvironments(["claude"]);
+			expect(isAutoDetecting()).toBe(false);
+
+			resetEnvironmentConfig();
+			expect(isAutoDetecting()).toBe(true);
+			// Auto-detect should find at least claude
+			expect(getEnabledEnvironments()).toContain("claude");
 		});
 	});
 
