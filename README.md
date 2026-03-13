@@ -40,19 +40,6 @@ cd ~/.ai-sync && git remote add origin git@github.com:you/ai-config.git
 ai-sync push
 ```
 
-### Migrating from claude-sync
-
-If you previously used `claude-sync`, the installer automatically:
-- Renames `~/.claude-sync-cli` to `~/.ai-sync-cli`
-- Renames `~/.claude-sync` to `~/.ai-sync`
-- Removes old `claude-sync` symlinks
-
-To migrate your sync repo from flat (v1) to multi-environment (v2) format:
-
-```bash
-ai-sync migrate
-```
-
 ## Quick Start
 
 ### First machine (where your config already lives)
@@ -80,6 +67,95 @@ ai-sync pull     # backs up current state first
 
 # Check what's changed
 ai-sync status
+```
+
+### Adding OpenCode support
+
+By default, ai-sync only syncs Claude Code. To also sync OpenCode (`~/.config/opencode/`):
+
+```bash
+# 1. Enable the OpenCode environment
+ai-sync env enable opencode
+
+# 2. Push to include OpenCode config in the sync repo
+ai-sync push
+
+# 3. On other machines, enable OpenCode there too
+ai-sync env enable opencode
+ai-sync pull
+```
+
+Claude Code and OpenCode configs are kept strictly isolated — they live in separate subdirectories (`claude/` and `opencode/`) and are never mixed.
+
+## Migration
+
+### Migrating from claude-sync to ai-sync
+
+If you previously used `claude-sync`, the installer automatically handles the rename:
+
+- Renames `~/.claude-sync-cli` → `~/.ai-sync-cli`
+- Renames `~/.claude-sync` → `~/.ai-sync`
+- Removes old `claude-sync` symlinks
+
+Just re-run the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/berlinguyinca/claude-sync/main/install.sh | bash
+```
+
+### Migrating from v1 (flat) to v2 (multi-environment)
+
+If you set up ai-sync before multi-environment support was added, your sync repo uses the v1 flat format where all files sit at the root. The v2 format organizes files into per-environment subdirectories (`claude/`, `opencode/`).
+
+**Check your current format:**
+
+```bash
+# If this file exists, you're already on v2
+cat ~/.ai-sync/.sync-version
+```
+
+**Migrate to v2:**
+
+```bash
+# Moves all root-level files into claude/ and writes .sync-version
+ai-sync migrate
+```
+
+This is safe — it:
+1. Verifies the repo is clean (no uncommitted changes)
+2. Moves all allowlisted files into a `claude/` subdirectory
+3. Writes `.sync-version` with content `2`
+4. Commits and pushes the change
+
+After migrating, pull on your other machines so they pick up the new structure:
+
+```bash
+# On each other machine
+ai-sync pull
+```
+
+**Important:** All machines should run the same version of ai-sync. Update all machines before or after migrating:
+
+```bash
+ai-sync update
+```
+
+### Migrating other machines after format change
+
+If you migrate on one machine, other machines need to update and pull:
+
+```bash
+# 1. Update ai-sync to the latest version
+ai-sync update
+
+# 2. Pull the migrated repo structure
+ai-sync pull
+```
+
+If a machine was set up with an older ai-sync that doesn't understand v2, re-run the installer to update:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/berlinguyinca/claude-sync/main/install.sh | bash
 ```
 
 ## Commands
@@ -175,6 +251,16 @@ ai-sync migrate
 ### The `/sync` skill
 
 After installation, you can type `/sync` inside Claude Code or OpenCode to pull, push, and check status in one step — no need to leave the conversation.
+
+Each tool gets its own version of the skill — they are not interchangeable. Skill files use a naming convention to target specific environments:
+
+| Skill file | Installed as | Target |
+|------------|-------------|--------|
+| `sync.claude.md` | `sync.md` | Claude Code only |
+| `sync.opencode.md` | `sync.md` | OpenCode only |
+| `utils.md` | `utils.md` | All environments |
+
+The convention is `<name>.<envId>.md` for environment-specific skills, or `<name>.md` for skills shared across all environments.
 
 ### Global options
 
@@ -345,6 +431,7 @@ src/
 │   ├── skills.ts             # Skill installation (/sync command)
 │   ├── environment.ts        # Environment definitions (Claude, OpenCode)
 │   ├── env-config.ts         # Per-machine environment preferences
+│   ├── env-helpers.ts        # Shared helpers (allowlist, path rewrite checks)
 │   └── migration.ts          # v1→v2 repo migration
 ├── git/
 │   └── repo.ts               # Git operations wrapper (simple-git)
@@ -353,8 +440,8 @@ src/
 └── index.ts                  # Library exports
 
 skills/
-├── sync.md                   # /sync slash command
-└── opencode-sync.md          # /sync for OpenCode
+├── sync.claude.md            # /sync for Claude Code (installs as sync.md)
+└── sync.opencode.md          # /sync for OpenCode (installs as sync.md)
 ```
 
 ## License
