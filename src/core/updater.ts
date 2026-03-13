@@ -1,40 +1,12 @@
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { getInstallDir } from "../platform/paths.js";
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const FETCH_TIMEOUT_MS = 10_000;
 const INSTALL_TIMEOUT_MS = 60_000;
 const BUILD_TIMEOUT_MS = 30_000;
-
-/**
- * Resolves the claude-sync install directory by walking up from the
- * currently running script until we find a directory that is both
- * a git repo and contains a package.json with name "claude-sync".
- */
-export function getInstallDir(): string {
-	const thisFile = fileURLToPath(import.meta.url);
-	let dir = path.dirname(thisFile);
-
-	for (let i = 0; i < 5; i++) {
-		const pkgPath = path.join(dir, "package.json");
-		const gitDir = path.join(dir, ".git");
-		if (fs.existsSync(pkgPath) && fs.existsSync(gitDir)) {
-			try {
-				const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
-				if (pkg.name === "claude-sync") return dir;
-			} catch {
-				// malformed package.json, keep searching
-			}
-		}
-		const parent = path.dirname(dir);
-		if (parent === dir) break;
-		dir = parent;
-	}
-
-	throw new Error("Could not find claude-sync install directory");
-}
 
 function getCheckFile(installDir: string): string {
 	return path.join(installDir, ".last-update-check");
@@ -64,7 +36,7 @@ export interface UpdateResult {
 
 /**
  * Checks for updates and applies them if available.
- * Used by the explicit `claude-sync update` command.
+ * Used by the explicit `ai-sync update` command.
  */
 export async function performUpdate(force = false): Promise<UpdateResult> {
 	const installDir = getInstallDir();
@@ -184,7 +156,7 @@ export async function startupUpdateCheck(): Promise<string | null> {
 			encoding: "utf-8",
 		}).trim();
 
-		return `claude-sync updated: ${fromRef} → ${toRef}`;
+		return `ai-sync updated: ${fromRef} → ${toRef}`;
 	} catch {
 		return null; // silent failure
 	}

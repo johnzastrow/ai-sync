@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# claude-sync online installer
+# ai-sync online installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/berlinguyinca/claude-sync/main/install.sh | bash
 
 REPO="berlinguyinca/claude-sync"
-INSTALL_DIR="${CLAUDE_SYNC_INSTALL_DIR:-$HOME/.claude-sync-cli}"
-SYNC_DIR="$HOME/.claude-sync"
-BIN_LINK="/usr/local/bin/claude-sync"
-DEFAULT_REPO_NAME="claude-config"
+INSTALL_DIR="${AI_SYNC_INSTALL_DIR:-${CLAUDE_SYNC_INSTALL_DIR:-$HOME/.ai-sync-cli}}"
+SYNC_DIR="$HOME/.ai-sync"
+BIN_LINK="/usr/local/bin/ai-sync"
+DEFAULT_REPO_NAME="ai-config"
 
 info()  { printf '\033[1;34m%s\033[0m\n' "$*"; }
 ok()    { printf '\033[1;32m%s\033[0m\n' "$*"; }
@@ -36,6 +36,29 @@ prompt() {
     echo "$reply"
   fi
 }
+
+# ── migration from claude-sync ────────────────────────────────────
+
+# Rename old install directory
+if [ -d "$HOME/.claude-sync-cli" ] && [ ! -d "$INSTALL_DIR" ]; then
+  info "Migrating install directory: ~/.claude-sync-cli -> ~/.ai-sync-cli"
+  mv "$HOME/.claude-sync-cli" "$INSTALL_DIR"
+fi
+
+# Rename old sync directory
+if [ -d "$HOME/.claude-sync" ] && [ ! -d "$SYNC_DIR" ]; then
+  info "Migrating sync directory: ~/.claude-sync -> ~/.ai-sync"
+  mv "$HOME/.claude-sync" "$SYNC_DIR"
+fi
+
+# Remove old symlink
+if [ -L "/usr/local/bin/claude-sync" ]; then
+  info "Removing old claude-sync symlink..."
+  rm -f "/usr/local/bin/claude-sync" 2>/dev/null || sudo rm -f "/usr/local/bin/claude-sync" 2>/dev/null || true
+fi
+if [ -L "$HOME/.local/bin/claude-sync" ]; then
+  rm -f "$HOME/.local/bin/claude-sync" 2>/dev/null || true
+fi
 
 # ── preflight ──────────────────────────────────────────────────────
 
@@ -181,7 +204,7 @@ if [ -d "$INSTALL_DIR/.git" ]; then
   git -C "$INSTALL_DIR" fetch --depth 1 origin main
   git -C "$INSTALL_DIR" reset --hard origin/main
 else
-  info "Cloning claude-sync into $INSTALL_DIR..."
+  info "Cloning ai-sync into $INSTALL_DIR..."
   git clone --depth 1 "https://github.com/$REPO.git" "$INSTALL_DIR"
 fi
 
@@ -198,16 +221,16 @@ info "Creating symlink..."
 # Try /usr/local/bin first, fall back to ~/.local/bin
 if [ -w "$(dirname "$BIN_LINK")" ] || [ -w "$BIN_LINK" ] 2>/dev/null; then
   ln -sf "$INSTALL_DIR/dist/cli.js" "$BIN_LINK"
-  ok "Linked claude-sync -> $BIN_LINK"
+  ok "Linked ai-sync -> $BIN_LINK"
 elif [ -t 0 ] && command -v sudo >/dev/null 2>&1; then
   # Only use sudo when running interactively (not piped)
   sudo ln -sf "$INSTALL_DIR/dist/cli.js" "$BIN_LINK"
-  ok "Linked claude-sync -> $BIN_LINK (via sudo)"
+  ok "Linked ai-sync -> $BIN_LINK (via sudo)"
 else
   FALLBACK_BIN="$HOME/.local/bin"
   mkdir -p "$FALLBACK_BIN"
-  ln -sf "$INSTALL_DIR/dist/cli.js" "$FALLBACK_BIN/claude-sync"
-  ok "Linked claude-sync -> $FALLBACK_BIN/claude-sync"
+  ln -sf "$INSTALL_DIR/dist/cli.js" "$FALLBACK_BIN/ai-sync"
+  ok "Linked ai-sync -> $FALLBACK_BIN/ai-sync"
   case ":$PATH:" in
     *":$FALLBACK_BIN:"*) ;;
     *) warn "Add $FALLBACK_BIN to your PATH:"
@@ -216,14 +239,30 @@ else
 fi
 
 echo ""
-ok "claude-sync installed successfully!"
+ok "ai-sync installed successfully!"
 
 # Use the built binary directly — symlink may not be in PATH yet
-CLAUDE_SYNC="node $INSTALL_DIR/dist/cli.js"
+AI_SYNC="node $INSTALL_DIR/dist/cli.js"
 
-# Install Claude Code slash commands (e.g., /sync)
-info "Installing Claude Code skills..."
-$CLAUDE_SYNC install-skills --no-update-check 2>/dev/null && ok "Claude Code /sync command installed" || warn "Skill installation skipped (run 'claude-sync install-skills' later)"
+# ── environment selection ──────────────────────────────────────────
+
+info "Which environments do you want to sync?"
+echo "  1) Claude Code only (default)"
+echo "  2) OpenCode only"
+echo "  3) Both Claude Code and OpenCode"
+ENV_CHOICE=$(prompt "Choose" "1")
+
+case "$ENV_CHOICE" in
+  1) echo '["claude"]' > "$INSTALL_DIR/.environments.json" ;;
+  2) echo '["opencode"]' > "$INSTALL_DIR/.environments.json" ;;
+  3) echo '["claude","opencode"]' > "$INSTALL_DIR/.environments.json" ;;
+  *) warn "Invalid choice '$ENV_CHOICE', using Claude Code only"
+     echo '["claude"]' > "$INSTALL_DIR/.environments.json" ;;
+esac
+
+# Install slash commands (e.g., /sync)
+info "Installing slash command skills..."
+$AI_SYNC install-skills --no-update-check 2>/dev/null && ok "Slash commands installed" || warn "Skill installation skipped (run 'ai-sync install-skills' later)"
 
 # ── setup sync repo ───────────────────────────────────────────────
 
@@ -231,9 +270,9 @@ $CLAUDE_SYNC install-skills --no-update-check 2>/dev/null && ok "Claude Code /sy
 if [ -d "$SYNC_DIR/.git" ]; then
   echo ""
   ok "Sync repo already configured at $SYNC_DIR"
-  echo "  claude-sync push    # push local changes"
-  echo "  claude-sync pull    # pull remote changes"
-  echo "  claude-sync status  # check sync state"
+  echo "  ai-sync push    # push local changes"
+  echo "  ai-sync pull    # pull remote changes"
+  echo "  ai-sync status  # check sync state"
   echo ""
   exit 0
 fi
@@ -242,7 +281,7 @@ fi
 if [ ! -d "$HOME/.claude" ]; then
   echo ""
   warn "No ~/.claude directory found. Run claude first to generate config,"
-  echo "then run: claude-sync init"
+  echo "then run: ai-sync init"
   echo ""
   exit 0
 fi
@@ -256,9 +295,9 @@ if ! command -v gh >/dev/null 2>&1; then
   warn "GitHub CLI (gh) not found — skipping automatic repo creation."
   echo ""
   echo "Create a repo on GitHub manually, then run:"
-  echo "  claude-sync init"
-  echo "  cd ~/.claude-sync && git remote add origin <repo-url>"
-  echo "  claude-sync push"
+  echo "  ai-sync init"
+  echo "  cd ~/.ai-sync && git remote add origin <repo-url>"
+  echo "  ai-sync push"
   echo ""
   exit 0
 fi
@@ -267,9 +306,9 @@ fi
 if ! gh auth status >/dev/null 2>&1; then
   warn "GitHub CLI not authenticated — skipping automatic repo creation."
   echo "Run 'gh auth login' first, then:"
-  echo "  claude-sync init"
-  echo "  cd ~/.claude-sync && git remote add origin <repo-url>"
-  echo "  claude-sync push"
+  echo "  ai-sync init"
+  echo "  cd ~/.ai-sync && git remote add origin <repo-url>"
+  echo "  ai-sync push"
   echo ""
   exit 0
 fi
@@ -277,9 +316,9 @@ fi
 GH_USER=$(gh api user --jq '.login' 2>/dev/null) || GH_USER=""
 if [ -z "$GH_USER" ]; then
   warn "Could not determine GitHub username — skipping automatic repo creation."
-  echo "  claude-sync init"
-  echo "  cd ~/.claude-sync && git remote add origin <repo-url>"
-  echo "  claude-sync push"
+  echo "  ai-sync init"
+  echo "  cd ~/.ai-sync && git remote add origin <repo-url>"
+  echo "  ai-sync push"
   echo ""
   exit 0
 fi
@@ -307,7 +346,7 @@ echo ""
 info "Creating $REPO_VISIBILITY repo: $GH_USER/$REPO_NAME"
 
 REPO_EXISTED=false
-GH_CREATE_OUTPUT=$(gh repo create "$REPO_NAME" --"$REPO_VISIBILITY" --description "Claude Code config synced by claude-sync" 2>&1) && {
+GH_CREATE_OUTPUT=$(gh repo create "$REPO_NAME" --"$REPO_VISIBILITY" --description "AI tool config synced by ai-sync" 2>&1) && {
   ok "GitHub repo created"
 } || {
   if echo "$GH_CREATE_OUTPUT" | grep -qi "already exists"; then
@@ -319,18 +358,18 @@ GH_CREATE_OUTPUT=$(gh repo create "$REPO_NAME" --"$REPO_VISIBILITY" --descriptio
 }
 
 if [ "$REPO_EXISTED" = true ]; then
-  # Second machine: clone the existing repo and apply to ~/.claude
+  # Second machine: clone the existing repo and apply to local config
   info "Bootstrapping from existing repo..."
-  $CLAUDE_SYNC bootstrap "$REMOTE_URL"
+  $AI_SYNC bootstrap "$REMOTE_URL"
 else
   # First machine: init from local config and push
   info "Initializing sync repo..."
-  $CLAUDE_SYNC init
+  $AI_SYNC init
 
   info "Adding remote and pushing..."
   git -C "$SYNC_DIR" remote add origin "$REMOTE_URL" 2>/dev/null || \
     git -C "$SYNC_DIR" remote set-url origin "$REMOTE_URL"
-  $CLAUDE_SYNC push
+  $AI_SYNC push
 fi
 
 echo ""

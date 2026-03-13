@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import pc from "picocolors";
+import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
 import { installSkills } from "../../core/skills.js";
 import { getClaudeDir } from "../../platform/paths.js";
 
@@ -9,11 +10,12 @@ import { getClaudeDir } from "../../platform/paths.js";
 export function registerInstallSkillsCommand(program: Command): void {
 	program
 		.command("install-skills")
-		.description("Install Claude Code slash commands (e.g., /sync) into ~/.claude/commands/")
+		.description("Install slash commands (e.g., /sync) into config directories")
 		.option("--claude-dir <path>", "Custom ~/.claude path", getClaudeDir())
 		.action(async (opts) => {
 			try {
-				const result = await installSkills(opts.claudeDir);
+				const environments = getEnabledEnvironmentInstances();
+				const result = await installSkills(opts.claudeDir, environments);
 
 				if (result.installed.length > 0) {
 					console.log(pc.green(`Installed skills: ${result.installed.join(", ")}`));

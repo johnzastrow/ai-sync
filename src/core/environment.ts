@@ -1,0 +1,124 @@
+import * as os from "node:os";
+import * as path from "node:path";
+
+/**
+ * Represents an AI tool environment (e.g., Claude Code, OpenCode) whose
+ * configuration can be synced across machines.
+ */
+export interface Environment {
+	/** Unique identifier used as subdirectory name in the sync repo. */
+	id: string;
+	/** Human-readable name for CLI output. */
+	displayName: string;
+	/** Returns the absolute path to the tool's config directory. */
+	getConfigDir(): string;
+	/** Files and directories to sync (same format as DEFAULT_SYNC_TARGETS). */
+	getSyncTargets(): readonly string[];
+	/** Additional plugin sync patterns. */
+	getPluginSyncPatterns(): readonly string[];
+	/** Patterns to explicitly exclude from sync. */
+	getIgnorePatterns(): readonly string[];
+	/** Files that need {{HOME}} path rewriting. */
+	getPathRewriteTargets(): string[];
+	/** Subdirectory name for slash-command skills, or null if not supported. */
+	getSkillsSubdir(): string | null;
+}
+
+/**
+ * Claude Code environment — config lives at ~/.claude
+ */
+export class ClaudeEnvironment implements Environment {
+	readonly id = "claude";
+	readonly displayName = "Claude Code";
+
+	getConfigDir(): string {
+		return path.join(os.homedir(), ".claude");
+	}
+
+	getSyncTargets(): readonly string[] {
+		return [
+			"settings.json",
+			"CLAUDE.md",
+			"agents/",
+			"commands/",
+			"hooks/",
+			"get-shit-done/",
+			"package.json",
+			"gsd-file-manifest.json",
+		];
+	}
+
+	getPluginSyncPatterns(): readonly string[] {
+		return [
+			"plugins/blocklist.json",
+			"plugins/known_marketplaces.json",
+			"plugins/marketplaces/",
+		];
+	}
+
+	getIgnorePatterns(): readonly string[] {
+		return ["plugins/install-counts-cache.json"];
+	}
+
+	getPathRewriteTargets(): string[] {
+		return ["settings.json"];
+	}
+
+	getSkillsSubdir(): string | null {
+		return "commands";
+	}
+}
+
+/**
+ * OpenCode environment — config lives at ~/.config/opencode/ (respects XDG_CONFIG_HOME)
+ */
+export class OpenCodeEnvironment implements Environment {
+	readonly id = "opencode";
+	readonly displayName = "OpenCode";
+
+	getConfigDir(): string {
+		const xdgConfig = process.env.XDG_CONFIG_HOME;
+		const base = xdgConfig || path.join(os.homedir(), ".config");
+		return path.join(base, "opencode");
+	}
+
+	getSyncTargets(): readonly string[] {
+		return [
+			"opencode.json",
+			"settings.json",
+			"agents/",
+			"command/",
+			"hooks/",
+			"get-shit-done/",
+			"package.json",
+			"gsd-file-manifest.json",
+		];
+	}
+
+	getPluginSyncPatterns(): readonly string[] {
+		return [];
+	}
+
+	getIgnorePatterns(): readonly string[] {
+		return [];
+	}
+
+	getPathRewriteTargets(): string[] {
+		return ["opencode.json"];
+	}
+
+	getSkillsSubdir(): string | null {
+		return "command";
+	}
+}
+
+/** All known environments. */
+export const ALL_ENVIRONMENTS: readonly Environment[] = [
+	new ClaudeEnvironment(),
+	new OpenCodeEnvironment(),
+];
+
+/** Look up an environment by its id. */
+export function getEnvironmentById(id: string): Environment | undefined {
+	return ALL_ENVIRONMENTS.find((e) => e.id === id);
+}

@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import pc from "picocolors";
+import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
 import type { SyncPullResult } from "../../core/sync-engine.js";
 import { syncPull } from "../../core/sync-engine.js";
 import { getClaudeDir, getSyncRepoDir } from "../../platform/paths.js";
@@ -18,9 +19,11 @@ export interface PullOptions {
  * Delegates to syncPull from the sync engine.
  */
 export async function handlePull(options: PullOptions): Promise<SyncPullResult> {
+	const environments = getEnabledEnvironmentInstances();
 	return syncPull({
 		claudeDir: options.claudeDir ?? getClaudeDir(),
 		syncRepoDir: options.repoPath ?? getSyncRepoDir(),
+		environments,
 	});
 }
 
@@ -30,7 +33,7 @@ export async function handlePull(options: PullOptions): Promise<SyncPullResult> 
 export function registerPullCommand(program: Command): void {
 	program
 		.command("pull")
-		.description("Pull remote changes to local ~/.claude")
+		.description("Pull remote changes to local config directories")
 		.option("--repo-path <path>", "Custom sync repo path", getSyncRepoDir())
 		.option("--claude-dir <path>", "Custom ~/.claude path", getClaudeDir())
 		.option("-v, --verbose", "Show detailed file changes", false)

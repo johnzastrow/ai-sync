@@ -1,9 +1,9 @@
 {
-	"name": "claude-sync",
+	"name": "ai-sync",
 	"version": "0.2.0",
 	"type": "module",
 	"bin": {
-		"claude-sync": "./dist/cli.js"
+		"ai-sync": "./dist/cli.js"
 	},
 	"scripts": {
 		"build": "tsup",

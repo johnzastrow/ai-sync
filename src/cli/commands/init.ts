@@ -2,6 +2,8 @@ import type { Command } from "commander";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import pc from "picocolors";
+import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
+import { makeAllowlistFn, needsPathRewrite } from "../../core/env-helpers.js";
 import { rewritePathsForRepo } from "../../core/path-rewriter.js";
 import { scanDirectory } from "../../core/scanner.js";
 import { installSkills } from "../../core/skills.js";
@@ -34,18 +36,14 @@ export interface InitOptions {
 
 /**
  * Core init logic extracted for testability.
- * Creates a git-backed sync repo from ~/.claude.
+ * Creates a git-backed sync repo from local config directories.
  */
 export async function handleInit(options: InitOptions): Promise<InitResult> {
 	const claudeDir = options.claudeDir ?? getClaudeDir();
 	const syncRepoDir = options.repoPath ?? getSyncRepoDir();
-
-	// Check if source ~/.claude exists
-	try {
-		await fs.access(claudeDir);
-	} catch {
-		throw new Error(`No ~/.claude directory found at ${claudeDir}`);
-	}
+	// Use multi-env mode only when claudeDir is NOT explicitly passed
+	const useMultiEnv = !options.claudeDir;
+	const environments = useMultiEnv ? getEnabledEnvironmentInstances() : [];
 
 	// Check if sync repo already exists
 	if (await isGitRepo(syncRepoDir)) {
@@ -72,54 +70,105 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
 		"chore: initialize sync repo with line ending config",
 	);
 
-	// Scan source directory for allowed files
-	const allowedFiles = await scanDirectory(claudeDir);
+	let totalCopied = 0;
+	let totalExcluded = 0;
 
-	// Copy allowed files to sync repo
-	const copiedFiles: string[] = [];
-	for (const relativePath of allowedFiles) {
-		const sourcePath = path.join(claudeDir, relativePath);
-		const destPath = path.join(syncRepoDir, relativePath);
+	if (useMultiEnv && environments.length > 0) {
+		// v2 multi-environment format
+		for (const env of environments) {
+			const configDir = env.id === "claude" ? claudeDir : env.getConfigDir();
 
-		// Ensure parent directory exists
-		await fs.mkdir(path.dirname(destPath), { recursive: true });
+			try {
+				await fs.access(configDir);
+			} catch {
+				// Config dir doesn't exist, skip
+				continue;
+			}
 
-		// Read source file
-		let content = await fs.readFile(sourcePath, "utf-8");
+			const allowlistFn = makeAllowlistFn(env);
+			const allowedFiles = await scanDirectory(configDir, allowlistFn);
+			const homeDir = path.dirname(configDir);
+			const envSubdir = path.join(syncRepoDir, env.id);
 
-		// Apply path rewriting for settings.json
-		// Derive homeDir from claudeDir (claudeDir is typically ~/.claude, so parent is ~)
-		if (path.basename(relativePath) === "settings.json") {
-			const homeDir = path.dirname(claudeDir);
-			content = rewritePathsForRepo(content, homeDir);
+			for (const relativePath of allowedFiles) {
+				const sourcePath = path.join(configDir, relativePath);
+				const destPath = path.join(envSubdir, relativePath);
+				await fs.mkdir(path.dirname(destPath), { recursive: true });
+				let content = await fs.readFile(sourcePath, "utf-8");
+				if (needsPathRewrite(relativePath, env)) {
+					content = rewritePathsForRepo(content, homeDir);
+				}
+				await fs.writeFile(destPath, content);
+			}
+
+			totalCopied += allowedFiles.length;
+
+			// Count excluded
+			try {
+				const allEntries = await fs.readdir(configDir, {
+					recursive: true,
+					withFileTypes: true,
+				});
+				totalExcluded += allEntries.filter((e) => e.isFile()).length - allowedFiles.length;
+			} catch {
+				// Can't count
+			}
 		}
 
-		// Write to sync repo
-		await fs.writeFile(destPath, content);
-		copiedFiles.push(relativePath);
+		// Write .sync-version
+		await fs.writeFile(path.join(syncRepoDir, ".sync-version"), "2\n");
+
+		// Commit synced files
+		if (totalCopied > 0) {
+			await addFiles(syncRepoDir, ["."]);
+			await commitFiles(syncRepoDir, "feat: initial sync of config");
+		}
+
+		// Install skills for all environments
+		await installSkills(claudeDir, environments);
+	} else {
+		// v1 legacy: single claude environment (fallback for no envs)
+		try {
+			await fs.access(claudeDir);
+		} catch {
+			throw new Error(`No ~/.claude directory found at ${claudeDir}`);
+		}
+
+		const allowedFiles = await scanDirectory(claudeDir);
+		const copiedFiles: string[] = [];
+		for (const relativePath of allowedFiles) {
+			const sourcePath = path.join(claudeDir, relativePath);
+			const destPath = path.join(syncRepoDir, relativePath);
+			await fs.mkdir(path.dirname(destPath), { recursive: true });
+			let content = await fs.readFile(sourcePath, "utf-8");
+			if (path.basename(relativePath) === "settings.json") {
+				const homeDir = path.dirname(claudeDir);
+				content = rewritePathsForRepo(content, homeDir);
+			}
+			await fs.writeFile(destPath, content);
+			copiedFiles.push(relativePath);
+		}
+
+		if (copiedFiles.length > 0) {
+			await addFiles(syncRepoDir, copiedFiles);
+			await commitFiles(syncRepoDir, "feat: initial sync of claude config");
+		}
+
+		totalCopied = copiedFiles.length;
+
+		const allEntries = await fs.readdir(claudeDir, {
+			recursive: true,
+			withFileTypes: true,
+		});
+		totalExcluded = allEntries.filter((e) => e.isFile()).length - totalCopied;
+
+		await installSkills(claudeDir);
 	}
-
-	// Commit synced files
-	if (copiedFiles.length > 0) {
-		await addFiles(syncRepoDir, copiedFiles);
-		await commitFiles(syncRepoDir, "feat: initial sync of claude config");
-	}
-
-	// Calculate excluded count (rough: scan all files in source, subtract allowed)
-	const allEntries = await fs.readdir(claudeDir, {
-		recursive: true,
-		withFileTypes: true,
-	});
-	const totalFiles = allEntries.filter((e) => e.isFile()).length;
-	const filesExcluded = totalFiles - copiedFiles.length;
-
-	// Install Claude Code skills (e.g., /sync command)
-	await installSkills(claudeDir);
 
 	return {
 		syncRepoDir,
-		filesSynced: copiedFiles.length,
-		filesExcluded,
+		filesSynced: totalCopied,
+		filesExcluded: totalExcluded,
 	};
 }
 
@@ -129,7 +178,7 @@ export async function handleInit(options: InitOptions): Promise<InitResult> {
 export function registerInitCommand(program: Command): void {
 	program
 		.command("init")
-		.description("Initialize a git-backed sync repo from ~/.claude")
+		.description("Initialize a git-backed sync repo from local config")
 		.option("--force", "Re-initialize an existing sync repo", false)
 		.option(
 			"--repo-path <path>",

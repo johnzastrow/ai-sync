@@ -2,8 +2,10 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { startupUpdateCheck } from "../core/updater.js";
 import { registerBootstrapCommand } from "./commands/bootstrap.js";
+import { registerEnvCommand } from "./commands/env.js";
 import { registerInitCommand } from "./commands/init.js";
 import { registerInstallSkillsCommand } from "./commands/install-skills.js";
+import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerPullCommand } from "./commands/pull.js";
 import { registerPushCommand } from "./commands/push.js";
 import { registerStatusCommand } from "./commands/status.js";
@@ -12,18 +14,20 @@ import { registerUpdateCommand } from "./commands/update.js";
 const program = new Command();
 
 program
-	.name("claude-sync")
+	.name("ai-sync")
 	.description(
-		"Git-backed sync for ~/.claude — keep your Claude Code configuration identical across machines.\n\n" +
+		"Git-backed sync for AI tool configuration — keep your Claude Code and OpenCode config identical across machines.\n\n" +
 			"Quick start:\n" +
-			"  claude-sync init                  Create a sync repo from your local ~/.claude\n" +
-			"  claude-sync push                  Push local changes to the remote\n" +
-			"  claude-sync pull                  Pull remote changes to local\n" +
-			"  claude-sync status                Show what's changed\n" +
-			"  claude-sync bootstrap <repo-url>  Set up a new machine from an existing repo\n" +
-			"  claude-sync update                Check for and apply tool updates\n" +
-			"  claude-sync install-skills        Install /sync and other Claude Code slash commands\n\n" +
-			"Auto-update: claude-sync checks for updates once every 24 hours.\n" +
+			"  ai-sync init                  Create a sync repo from your local config\n" +
+			"  ai-sync push                  Push local changes to the remote\n" +
+			"  ai-sync pull                  Pull remote changes to local\n" +
+			"  ai-sync status                Show what's changed\n" +
+			"  ai-sync bootstrap <repo-url>  Set up a new machine from an existing repo\n" +
+			"  ai-sync update                Check for and apply tool updates\n" +
+			"  ai-sync install-skills        Install /sync and other slash commands\n" +
+			"  ai-sync env list|enable|disable  Manage synced environments\n" +
+			"  ai-sync migrate               Migrate v1 repo to v2 multi-env format\n\n" +
+			"Auto-update: ai-sync checks for updates once every 24 hours.\n" +
 			"Disable with --no-update-check.",
 	)
 	.version("0.2.0")
@@ -36,6 +40,8 @@ registerStatusCommand(program);
 registerBootstrapCommand(program);
 registerUpdateCommand(program);
 registerInstallSkillsCommand(program);
+registerEnvCommand(program);
+registerMigrateCommand(program);
 
 export { program };
 

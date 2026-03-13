@@ -2,11 +2,26 @@ export type { BootstrapOptions, BootstrapResult } from "./cli/commands/bootstrap
 export { handleBootstrap } from "./cli/commands/bootstrap.js";
 export { createBackup } from "./core/backup.js";
 export {
+	getEnabledEnvironments,
+	getEnabledEnvironmentInstances,
+	setEnabledEnvironments,
+} from "./core/env-config.js";
+export { makeAllowlistFn, needsPathRewrite } from "./core/env-helpers.js";
+export type { Environment } from "./core/environment.js";
+export {
+	ALL_ENVIRONMENTS,
+	ClaudeEnvironment,
+	OpenCodeEnvironment,
+	getEnvironmentById,
+} from "./core/environment.js";
+export {
 	DEFAULT_SYNC_TARGETS,
 	isPathAllowed,
 	PLUGIN_IGNORE_PATTERNS,
 	PLUGIN_SYNC_PATTERNS,
 } from "./core/manifest.js";
+export type { MigrateResult } from "./core/migration.js";
+export { detectRepoVersion, migrateToV2 } from "./core/migration.js";
 export { expandPathsForLocal, rewritePathsForRepo } from "./core/path-rewriter.js";
 export { scanDirectory } from "./core/scanner.js";
 export type {
@@ -35,8 +50,15 @@ export {
 	pushToRemote,
 	writeGitattributes,
 } from "./git/repo.js";
-export { getClaudeDir, getHomeDir, getSyncRepoDir, normalizePath } from "./platform/paths.js";
+export {
+	getClaudeDir,
+	getHomeDir,
+	getInstallDir,
+	getOpenCodeConfigDir,
+	getSyncRepoDir,
+	normalizePath,
+} from "./platform/paths.js";
 export type { InstallSkillsResult } from "./core/skills.js";
 export { installSkills } from "./core/skills.js";
 export type { UpdateResult } from "./core/updater.js";
-export { getInstallDir, performUpdate, startupUpdateCheck } from "./core/updater.js";
+export { performUpdate, startupUpdateCheck } from "./core/updater.js";
