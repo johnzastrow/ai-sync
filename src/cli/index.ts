@@ -74,7 +74,9 @@ export { program };
 const isDirectRun =
 	typeof process !== "undefined" &&
 	process.argv[1] &&
-	(process.argv[1].endsWith("/cli/index.ts") || process.argv[1].endsWith("/cli.js"));
+	(process.argv[1].endsWith("/cli/index.ts") ||
+		process.argv[1].endsWith("/cli.js") ||
+		process.argv[1].endsWith("/ai-sync"));
 
 if (isDirectRun) {
 	// Run startup update check before parsing commands
