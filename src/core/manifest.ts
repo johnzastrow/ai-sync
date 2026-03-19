@@ -12,6 +12,7 @@ export const DEFAULT_SYNC_TARGETS: readonly string[] = [
 	"get-shit-done/",
 	"package.json",
 	"gsd-file-manifest.json",
+	"skills/",
 ] as const;
 
 /**
@@ -22,6 +23,7 @@ export const PLUGIN_SYNC_PATTERNS: readonly string[] = [
 	"plugins/blocklist.json",
 	"plugins/known_marketplaces.json",
 	"plugins/marketplaces/",
+	"plugins/installed_plugins.json",
 ] as const;
 
 /**

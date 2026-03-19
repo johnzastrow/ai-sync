@@ -45,11 +45,17 @@ export class ClaudeEnvironment implements Environment {
 			"get-shit-done/",
 			"package.json",
 			"gsd-file-manifest.json",
+			"skills/",
 		];
 	}
 
 	getPluginSyncPatterns(): readonly string[] {
-		return ["plugins/blocklist.json", "plugins/known_marketplaces.json", "plugins/marketplaces/"];
+		return [
+			"plugins/blocklist.json",
+			"plugins/known_marketplaces.json",
+			"plugins/marketplaces/",
+			"plugins/installed_plugins.json",
+		];
 	}
 
 	getIgnorePatterns(): readonly string[] {
@@ -57,7 +63,7 @@ export class ClaudeEnvironment implements Environment {
 	}
 
 	getPathRewriteTargets(): string[] {
-		return ["settings.json"];
+		return ["settings.json", "installed_plugins.json"];
 	}
 
 	getSkillsSubdir(): string | null {
