@@ -36,8 +36,16 @@ describe("environment", () => {
 			expect(claude.getSyncTargets()).toContain("commands/");
 		});
 
+		it("has skills/ as sync target", () => {
+			expect(claude.getSyncTargets()).toContain("skills/");
+		});
+
 		it("has plugin sync patterns", () => {
 			expect(claude.getPluginSyncPatterns().length).toBeGreaterThan(0);
+		});
+
+		it("has installed_plugins.json in plugin sync patterns", () => {
+			expect(claude.getPluginSyncPatterns()).toContain("plugins/installed_plugins.json");
 		});
 
 		it("has plugin ignore patterns", () => {
@@ -46,6 +54,10 @@ describe("environment", () => {
 
 		it("path rewrite targets include settings.json", () => {
 			expect(claude.getPathRewriteTargets()).toContain("settings.json");
+		});
+
+		it("path rewrite targets include installed_plugins.json", () => {
+			expect(claude.getPathRewriteTargets()).toContain("installed_plugins.json");
 		});
 
 		it("skills subdir is 'commands'", () => {

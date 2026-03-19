@@ -8,8 +8,8 @@ import {
 
 describe("manifest", () => {
 	describe("DEFAULT_SYNC_TARGETS", () => {
-		it("contains exactly 8 sync targets", () => {
-			expect(DEFAULT_SYNC_TARGETS).toHaveLength(8);
+		it("contains exactly 9 sync targets", () => {
+			expect(DEFAULT_SYNC_TARGETS).toHaveLength(9);
 		});
 
 		it("contains the expected sync targets", () => {
@@ -22,14 +22,15 @@ describe("manifest", () => {
 				"get-shit-done/",
 				"package.json",
 				"gsd-file-manifest.json",
+				"skills/",
 			];
 			expect([...DEFAULT_SYNC_TARGETS].sort()).toEqual([...expected].sort());
 		});
 	});
 
 	describe("PLUGIN_SYNC_PATTERNS", () => {
-		it("contains 3 plugin sync patterns", () => {
-			expect(PLUGIN_SYNC_PATTERNS).toHaveLength(3);
+		it("contains 4 plugin sync patterns", () => {
+			expect(PLUGIN_SYNC_PATTERNS).toHaveLength(4);
 		});
 
 		it("contains the expected plugin sync patterns", () => {
@@ -37,6 +38,7 @@ describe("manifest", () => {
 				"plugins/blocklist.json",
 				"plugins/known_marketplaces.json",
 				"plugins/marketplaces/",
+				"plugins/installed_plugins.json",
 			];
 			expect([...PLUGIN_SYNC_PATTERNS].sort()).toEqual([...expected].sort());
 		});
@@ -59,6 +61,14 @@ describe("manifest", () => {
 
 		it("allows nested files under allowed directories", () => {
 			expect(isPathAllowed("agents/my-skill/SKILL.md")).toBe(true);
+		});
+
+		it("allows files under skills/ directory", () => {
+			expect(isPathAllowed("skills/autoresearch/SKILL.md")).toBe(true);
+		});
+
+		it("allows plugins/installed_plugins.json", () => {
+			expect(isPathAllowed("plugins/installed_plugins.json")).toBe(true);
 		});
 
 		it("rejects files in projects/ directory", () => {
