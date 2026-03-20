@@ -80,15 +80,39 @@ describe("scanner", () => {
 		expect(result).toContain("hooks/pre-commit.sh");
 	});
 
-	it("excludes symlinked files", async () => {
+	it("follows symlinked files", async () => {
 		await createFile("CLAUDE.md", "# Real file");
 		// Create a symlink to an allowed file
 		await fs.symlink(path.join(tmpDir, "CLAUDE.md"), path.join(tmpDir, "settings.json"));
 
 		const result = await scanDirectory(tmpDir);
 		expect(result).toContain("CLAUDE.md");
-		// settings.json is a symlink, should be excluded
-		expect(result).not.toContain("settings.json");
+		// settings.json is a symlink to a file, should be included
+		expect(result).toContain("settings.json");
+	});
+
+	it("follows symlinked directories", async () => {
+		// Create an external directory with files
+		const externalDir = path.join(tmpDir, "_external");
+		await fs.mkdir(externalDir, { recursive: true });
+		await fs.writeFile(path.join(externalDir, "skill.md"), "# Skill");
+
+		// Create commands/gw as a symlink to the external directory
+		await fs.mkdir(path.join(tmpDir, "commands"), { recursive: true });
+		await fs.symlink(externalDir, path.join(tmpDir, "commands", "gw"));
+
+		const result = await scanDirectory(tmpDir);
+		expect(result).toContain("commands/gw/skill.md");
+	});
+
+	it("prevents cycles from circular symlinks", async () => {
+		// Create a directory with a symlink back to parent
+		await createFile("commands/real.md", "# Real");
+		await fs.symlink(tmpDir, path.join(tmpDir, "commands", "loop"));
+
+		const result = await scanDirectory(tmpDir);
+		expect(result).toContain("commands/real.md");
+		// Should not loop infinitely
 	});
 
 	it("returns forward-slash relative paths (cross-platform contract)", async () => {
