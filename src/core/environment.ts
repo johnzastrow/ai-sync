@@ -46,6 +46,8 @@ export class ClaudeEnvironment implements Environment {
 			"package.json",
 			"gsd-file-manifest.json",
 			"skills/",
+			"rules/",
+			"keybindings.json",
 		];
 	}
 

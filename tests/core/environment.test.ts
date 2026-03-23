@@ -41,6 +41,14 @@ describe("environment", () => {
 			expect(claude.getSyncTargets()).toContain("skills/");
 		});
 
+		it("has rules/ as sync target", () => {
+			expect(claude.getSyncTargets()).toContain("rules/");
+		});
+
+		it("has keybindings.json as sync target", () => {
+			expect(claude.getSyncTargets()).toContain("keybindings.json");
+		});
+
 		it("has plugin sync patterns", () => {
 			expect(claude.getPluginSyncPatterns().length).toBeGreaterThan(0);
 		});
