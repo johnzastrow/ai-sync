@@ -125,6 +125,7 @@ export class OpenCodeEnvironment implements Environment {
 		return [
 			"opencode.json",
 			"settings.json",
+			"AGENTS.md",
 			"agents/",
 			"command/",
 			"hooks/",
