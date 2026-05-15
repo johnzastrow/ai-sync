@@ -9,6 +9,7 @@ import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
 import { makeAllowlistFn, needsPathRewrite } from "../../core/env-helpers.js";
 import { detectRepoVersion } from "../../core/migration.js";
 import { expandPathsForLocal } from "../../core/path-rewriter.js";
+import { safeWriteInside } from "../../core/safe-fs.js";
 import { scanDirectory } from "../../core/scanner.js";
 import { installSkills } from "../../core/skills.js";
 import { isGitRepo } from "../../git/repo.js";
@@ -133,8 +134,9 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 			const repoSubdir = path.join(syncRepoDir, env.id);
 			const allowlistFn = makeAllowlistFn(env);
 
-			// Create config dir if needed
+			// Create config dir if needed and resolve realpath for containment checks
 			await fs.mkdir(configDir, { recursive: true });
+			const configDirReal = await fs.realpath(configDir);
 
 			// Backup existing config
 			try {
@@ -164,14 +166,14 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 				log(`Found ${repoFiles.length} files for ${env.id}`);
 				for (const relativePath of repoFiles) {
 					const srcPath = path.join(repoSubdir, relativePath);
-					const destPath = path.join(configDir, relativePath);
-					await fs.mkdir(path.dirname(destPath), { recursive: true });
 					let content = await fs.readFile(srcPath, "utf-8");
 					if (needsPathRewrite(relativePath, env)) {
 						log(`Expanding paths in ${relativePath}`);
 						content = expandPathsForLocal(content, envHomeDir);
 					}
-					await fs.writeFile(destPath, content);
+					await safeWriteInside(configDirReal, relativePath, content, {
+						preserveModeFromSrc: srcPath,
+					});
 				}
 				totalApplied += repoFiles.length;
 			} catch {
@@ -190,6 +192,7 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		// v1 flat mode
 		log("Using v1 flat mode");
 		await fs.mkdir(claudeDir, { recursive: true });
+		const claudeDirReal = await fs.realpath(claudeDir);
 
 		// Backup existing config
 		try {
@@ -206,13 +209,13 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		const repoFiles = await scanDirectory(syncRepoDir);
 		for (const relativePath of repoFiles) {
 			const srcPath = path.join(syncRepoDir, relativePath);
-			const destPath = path.join(claudeDir, relativePath);
-			await fs.mkdir(path.dirname(destPath), { recursive: true });
 			let content = await fs.readFile(srcPath, "utf-8");
 			if (path.basename(relativePath) === "settings.json") {
 				content = expandPathsForLocal(content, homeDir);
 			}
-			await fs.writeFile(destPath, content);
+			await safeWriteInside(claudeDirReal, relativePath, content, {
+				preserveModeFromSrc: srcPath,
+			});
 		}
 		totalApplied = repoFiles.length;
 
