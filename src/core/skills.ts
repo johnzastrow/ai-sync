@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getClaudeDir } from "../platform/paths.js";
 import type { Environment } from "./environment.js";
+import { safeWriteInside } from "./safe-fs.js";
 
 /**
  * Finds the skills source directory by walking up from the running module.
@@ -83,6 +84,7 @@ export async function installSkills(
 
 			const targetBase = path.join(env.getConfigDir(), subdir);
 			await fs.mkdir(targetBase, { recursive: true });
+			const targetBaseReal = await fs.realpath(targetBase);
 
 			const envInstalled: string[] = [];
 			const envSkipped: string[] = [];
@@ -96,6 +98,11 @@ export async function installSkills(
 				}
 
 				const src = path.join(skillsDir, file);
+				const srcStat = await fs.lstat(src);
+				if (srcStat.isSymbolicLink()) {
+					console.warn(`ai-sync: refusing to install symlinked skill file ${src}`);
+					continue;
+				}
 				const dest = path.join(targetBase, installName);
 				const srcContent = await fs.readFile(src, "utf-8");
 
@@ -109,7 +116,7 @@ export async function installSkills(
 					// file doesn't exist yet
 				}
 
-				await fs.writeFile(dest, srcContent);
+				await safeWriteInside(targetBaseReal, installName, srcContent);
 				envInstalled.push(installName);
 			}
 
@@ -123,6 +130,7 @@ export async function installSkills(
 		// Legacy single-directory mode — only install claude-targeted or generic skills
 		const targetBase = path.join(claudeDir ?? getClaudeDir(), "commands");
 		await fs.mkdir(targetBase, { recursive: true });
+		const targetBaseReal = await fs.realpath(targetBase);
 
 		for (const file of mdFiles) {
 			const { installName, targetEnvId } = parseSkillFilename(file);
@@ -133,6 +141,11 @@ export async function installSkills(
 			}
 
 			const src = path.join(skillsDir, file);
+			const srcStat = await fs.lstat(src);
+			if (srcStat.isSymbolicLink()) {
+				console.warn(`ai-sync: refusing to install symlinked skill file ${src}`);
+				continue;
+			}
 			const dest = path.join(targetBase, installName);
 			const srcContent = await fs.readFile(src, "utf-8");
 
@@ -146,7 +159,7 @@ export async function installSkills(
 				// file doesn't exist yet
 			}
 
-			await fs.writeFile(dest, srcContent);
+			await safeWriteInside(targetBaseReal, installName, srcContent);
 			allInstalled.push(installName);
 		}
 	}

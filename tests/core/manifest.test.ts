@@ -126,5 +126,38 @@ describe("manifest", () => {
 		it("rejects unknown directories", () => {
 			expect(isPathAllowed("unknown-new-directory/file.txt")).toBe(false);
 		});
+
+		describe("defensive normalisation", () => {
+			it("rejects an absolute POSIX path even if it resembles an allowed target", () => {
+				expect(isPathAllowed("/settings.json")).toBe(false);
+				expect(isPathAllowed("/agents/foo.md")).toBe(false);
+			});
+
+			it("rejects paths containing '..' segments", () => {
+				expect(isPathAllowed("agents/../../etc/passwd")).toBe(false);
+				expect(isPathAllowed("../settings.json")).toBe(false);
+			});
+
+			it("rejects paths containing '.' segments", () => {
+				expect(isPathAllowed("./settings.json")).toBe(false);
+				expect(isPathAllowed("agents/./foo.md")).toBe(false);
+			});
+
+			it("rejects the empty path", () => {
+				expect(isPathAllowed("")).toBe(false);
+			});
+
+			it("rejects paths with empty interior segments", () => {
+				expect(isPathAllowed("agents//foo.md")).toBe(false);
+			});
+
+			it("treats backslash-separated paths as forward-slash equivalents", () => {
+				// Scanner is meant to normalise before calling, but the allowlist
+				// also normalises defensively so a Windows-style raw path can't
+				// sneak through if some future caller forgets to.
+				expect(isPathAllowed("agents\\foo.md")).toBe(true);
+				expect(isPathAllowed("settings.json\\..\\evil")).toBe(false);
+			});
+		});
 	});
 });

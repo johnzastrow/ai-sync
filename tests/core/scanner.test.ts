@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { scanDirectory } from "../../src/core/scanner.js";
 
 describe("scanner", () => {
@@ -143,4 +143,37 @@ describe("scanner", () => {
 		expect(result).toContain("agents/skill/SKILL.md");
 		expect(result).toContain("hooks/pre-push.sh");
 	});
+
+	// POSIX filesystems happily accept filenames like `settings.json:hidden`,
+	// `bad.` (trailing dot), or `CON` — names that on Windows would be either
+	// rejected by the OS or interpreted as NTFS alternate data streams /
+	// reserved devices. If a sync repo cloned on POSIX contains such a name,
+	// the scanner must not surface it; otherwise a later sync onto a Windows
+	// box would either fail surprisingly or write to the wrong file.
+	it.skipIf(process.platform === "win32")(
+		"skips entries whose basename would be unsafe on Windows",
+		async () => {
+			await createFile("agents/normal.md", "ok");
+			// Trailing-dot basename — rejected by isSafeFilename.
+			await createFile("agents/trailing.", "x");
+			// Colon — looks like an NTFS alternate data stream.
+			await createFile("agents/secret.md:hidden", "x");
+			// Reserved device basename.
+			await createFile("agents/CON", "x");
+
+			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				const result = await scanDirectory(tmpDir);
+				expect(result).toContain("agents/normal.md");
+				expect(result).not.toContain("agents/trailing.");
+				expect(result).not.toContain("agents/secret.md:hidden");
+				expect(result).not.toContain("agents/CON");
+				// At least one warning was emitted naming the skipped entry.
+				const joined = warnSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+				expect(joined).toMatch(/unsafe filename/);
+			} finally {
+				warnSpy.mockRestore();
+			}
+		},
+	);
 });

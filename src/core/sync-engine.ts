@@ -15,6 +15,7 @@ import { makeAllowlistFn, needsPathRewrite } from "./env-helpers.js";
 import type { Environment } from "./environment.js";
 import { detectRepoVersion } from "./migration.js";
 import { expandPathsForLocal, rewritePathsForRepo } from "./path-rewriter.js";
+import { safeWriteInside } from "./safe-fs.js";
 import { scanDirectory } from "./scanner.js";
 
 /**
@@ -46,22 +47,13 @@ function verboseLog(options: SyncOptions, message: string): void {
 }
 
 /**
- * Writes file content and preserves the source file's permission mode.
- *
- * Plugin hooks and scripts require executable bits (e.g., 0o755).
- * Plain fs.writeFile creates files with default 0o644, which breaks
- * executable scripts after sync. This copies the mode from srcPath
- * so that git records it correctly (push) and local files remain
- * executable (pull).
+ * Resolves the destination root's realpath, falling back to a fresh mkdir if
+ * the directory does not yet exist. The returned realpath is then used as the
+ * containment boundary for every {@link safeWriteInside} call in this op.
  */
-async function writeFilePreservingMode(
-	srcPath: string,
-	destPath: string,
-	content: string,
-): Promise<void> {
-	const stat = await fs.stat(srcPath);
-	await fs.writeFile(destPath, content);
-	await fs.chmod(destPath, stat.mode);
+async function ensureRealRoot(root: string): Promise<string> {
+	await fs.mkdir(root, { recursive: true });
+	return fs.realpath(root);
 }
 
 /**
@@ -207,17 +199,17 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 
 				if (!options.dryRun) {
 					// Copy each file from configDir to repoSubdir
-					await fs.mkdir(repoSubdir, { recursive: true });
+					const repoSubdirReal = await ensureRealRoot(repoSubdir);
 					for (const relativePath of localFiles) {
 						const srcPath = path.join(configDir, relativePath);
-						const destPath = path.join(repoSubdir, relativePath);
-						await fs.mkdir(path.dirname(destPath), { recursive: true });
 						let content = await fs.readFile(srcPath, "utf-8");
 						if (needsPathRewrite(relativePath, env)) {
 							verboseLog(options, `Rewriting paths in ${relativePath}`);
 							content = rewritePathsForRepo(content, homeDir);
 						}
-						await writeFilePreservingMode(srcPath, destPath, content);
+						await safeWriteInside(repoSubdirReal, relativePath, content, {
+							preserveModeFromSrc: srcPath,
+						});
 					}
 
 					// Delete files from repo subdir that no longer exist locally
@@ -248,16 +240,17 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 		const localFiles = await scanDirectory(claudeDir);
 		verboseLog(options, `Found ${localFiles.length} files`);
 
+		const syncRepoDirReal = await ensureRealRoot(syncRepoDir);
 		for (const relativePath of localFiles) {
 			const srcPath = path.join(claudeDir, relativePath);
-			const destPath = path.join(syncRepoDir, relativePath);
-			await fs.mkdir(path.dirname(destPath), { recursive: true });
 			let content = await fs.readFile(srcPath, "utf-8");
 			if (path.basename(relativePath) === "settings.json") {
 				verboseLog(options, "Rewriting paths in settings.json");
 				content = rewritePathsForRepo(content, homeDir);
 			}
-			await writeFilePreservingMode(srcPath, destPath, content);
+			await safeWriteInside(syncRepoDirReal, relativePath, content, {
+				preserveModeFromSrc: srcPath,
+			});
 		}
 
 		// Delete files from repo that no longer exist locally
@@ -473,8 +466,9 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 
 				verboseLog(options, `Found ${repoFiles.length} files in repo for ${env.id}`);
 
+				let configDirReal: string | null = null;
 				if (!options.dryRun) {
-					await fs.mkdir(configDir, { recursive: true });
+					configDirReal = await ensureRealRoot(configDir);
 				}
 
 				const repoFileSet = new Set(repoFiles);
@@ -508,14 +502,13 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 
 					if (localContent === null || baseContent === null) {
 						// New file from remote or first sync — apply it
-						const changeType: FileChange["type"] =
-							localContent === null ? "added" : "modified";
-						const needsWrite =
-							localContent === null || localContent !== remoteContent;
+						const changeType: FileChange["type"] = localContent === null ? "added" : "modified";
+						const needsWrite = localContent === null || localContent !== remoteContent;
 						if (needsWrite) {
-							if (!options.dryRun) {
-								await fs.mkdir(path.dirname(destPath), { recursive: true });
-								await writeFilePreservingMode(srcPath, destPath, remoteContent);
+							if (!options.dryRun && configDirReal) {
+								await safeWriteInside(configDirReal, relativePath, remoteContent, {
+									preserveModeFromSrc: srcPath,
+								});
 							}
 							envChanges.push({ path: relativePath, type: changeType });
 							allFileChanges.push({
@@ -531,9 +524,10 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 						if (!localChanged) {
 							// No local modifications — safe to apply remote
 							if (remoteChanged) {
-								if (!options.dryRun) {
-									await fs.mkdir(path.dirname(destPath), { recursive: true });
-									await writeFilePreservingMode(srcPath, destPath, remoteContent);
+								if (!options.dryRun && configDirReal) {
+									await safeWriteInside(configDirReal, relativePath, remoteContent, {
+										preserveModeFromSrc: srcPath,
+									});
 								}
 								envChanges.push({ path: relativePath, type: "modified" });
 								allFileChanges.push({
@@ -546,9 +540,10 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 							verboseLog(options, `Keeping local changes: ${relativePath}`);
 						} else if (options.force) {
 							// Both changed + --force — overwrite with remote
-							if (!options.dryRun) {
-								await fs.mkdir(path.dirname(destPath), { recursive: true });
-								await writeFilePreservingMode(srcPath, destPath, remoteContent);
+							if (!options.dryRun && configDirReal) {
+								await safeWriteInside(configDirReal, relativePath, remoteContent, {
+									preserveModeFromSrc: srcPath,
+								});
 							}
 							envChanges.push({ path: relativePath, type: "modified" });
 							allFileChanges.push({
@@ -557,10 +552,7 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 							});
 						} else {
 							// Both changed — conflict, keep local version
-							verboseLog(
-								options,
-								`Conflict (keeping local): ${relativePath}`,
-							);
+							verboseLog(options, `Conflict (keeping local): ${relativePath}`);
 							envConflicts.push({ path: relativePath, type: "modified" });
 							allConflicts.push({
 								path: `${env.id}/${relativePath}`,
@@ -584,14 +576,10 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 								// Remote deleted this file — check for local modifications
 								let localModified = false;
 								try {
-									const localData = await fs.readFile(
-										path.join(configDir, localFile),
-										"utf-8",
-									);
+									const localData = await fs.readFile(path.join(configDir, localFile), "utf-8");
 									const rawBase = prePull.get(localFile);
 									const baseData =
-										rawBase !== undefined &&
-										needsPathRewrite(localFile, env)
+										rawBase !== undefined && needsPathRewrite(localFile, env)
 											? expandPathsForLocal(rawBase, homeDir)
 											: rawBase;
 									localModified = localData !== baseData;
@@ -600,10 +588,7 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 								}
 
 								if (localModified && !options.force) {
-									verboseLog(
-										options,
-										`Conflict (remote deleted, local modified): ${localFile}`,
-									);
+									verboseLog(options, `Conflict (remote deleted, local modified): ${localFile}`);
 									envConflicts.push({
 										path: localFile,
 										type: "deleted",
@@ -682,6 +667,7 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 		verboseLog(options, `Found ${repoFiles.length} files in repo`);
 		const repoFileSet = new Set(repoFiles);
 
+		const claudeDirReal = await ensureRealRoot(claudeDir);
 		for (const relativePath of repoFiles) {
 			const srcPath = path.join(syncRepoDir, relativePath);
 			const destPath = path.join(claudeDir, relativePath);
@@ -704,17 +690,16 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 			const baseContent =
 				rawBase !== undefined && isSettings
 					? expandPathsForLocal(rawBase, homeDir)
-					: rawBase ?? null;
+					: (rawBase ?? null);
 
 			if (localContent === null || baseContent === null) {
 				// New file — apply
-				const changeType: FileChange["type"] =
-					localContent === null ? "added" : "modified";
-				const needsWrite =
-					localContent === null || localContent !== remoteContent;
+				const changeType: FileChange["type"] = localContent === null ? "added" : "modified";
+				const needsWrite = localContent === null || localContent !== remoteContent;
 				if (needsWrite) {
-					await fs.mkdir(path.dirname(destPath), { recursive: true });
-					await writeFilePreservingMode(srcPath, destPath, remoteContent);
+					await safeWriteInside(claudeDirReal, relativePath, remoteContent, {
+						preserveModeFromSrc: srcPath,
+					});
 					allFileChanges.push({ path: relativePath, type: changeType });
 				}
 			} else {
@@ -723,21 +708,20 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 
 				if (!localChanged) {
 					if (remoteChanged) {
-						await fs.mkdir(path.dirname(destPath), { recursive: true });
-						await writeFilePreservingMode(srcPath, destPath, remoteContent);
+						await safeWriteInside(claudeDirReal, relativePath, remoteContent, {
+							preserveModeFromSrc: srcPath,
+						});
 						allFileChanges.push({ path: relativePath, type: "modified" });
 					}
 				} else if (!remoteChanged) {
 					verboseLog(options, `Keeping local changes: ${relativePath}`);
 				} else if (options.force) {
-					await fs.mkdir(path.dirname(destPath), { recursive: true });
-					await writeFilePreservingMode(srcPath, destPath, remoteContent);
+					await safeWriteInside(claudeDirReal, relativePath, remoteContent, {
+						preserveModeFromSrc: srcPath,
+					});
 					allFileChanges.push({ path: relativePath, type: "modified" });
 				} else {
-					verboseLog(
-						options,
-						`Conflict (keeping local): ${relativePath}`,
-					);
+					verboseLog(options, `Conflict (keeping local): ${relativePath}`);
 					allConflicts.push({ path: relativePath, type: "modified" });
 				}
 			}
@@ -752,26 +736,18 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 
 				let localModified = false;
 				try {
-					const localData = await fs.readFile(
-						path.join(claudeDir, localFile),
-						"utf-8",
-					);
+					const localData = await fs.readFile(path.join(claudeDir, localFile), "utf-8");
 					const rawBase = v1PrePull.get(localFile);
 					const isSettings = path.basename(localFile) === "settings.json";
 					const baseData =
-						rawBase !== undefined && isSettings
-							? expandPathsForLocal(rawBase, homeDir)
-							: rawBase;
+						rawBase !== undefined && isSettings ? expandPathsForLocal(rawBase, homeDir) : rawBase;
 					localModified = localData !== baseData;
 				} catch {
 					// Can't read
 				}
 
 				if (localModified && !options.force) {
-					verboseLog(
-						options,
-						`Conflict (remote deleted, local modified): ${localFile}`,
-					);
+					verboseLog(options, `Conflict (remote deleted, local modified): ${localFile}`);
 					allConflicts.push({ path: localFile, type: "deleted" });
 				} else {
 					await fs.rm(path.join(claudeDir, localFile));

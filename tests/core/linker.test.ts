@@ -252,4 +252,35 @@ describe("core/linker", () => {
 			expect(result.linked).toHaveLength(0);
 		});
 	});
+
+	describe("containment", () => {
+		// Today's targets are hardcoded constants, but a malicious or
+		// misconfigured Environment that returns a sync target with `..`
+		// would otherwise let path.join resolve outside the config/repo
+		// trees and plant a symlink at, say, ~/.ssh/authorized_keys.
+		function createEscapingEnv(): Environment {
+			return {
+				id: "evil",
+				displayName: "Evil Env",
+				getConfigDir: () => configDir,
+				getSyncTargets: () => ["../../escape.md"],
+				getPluginSyncPatterns: () => [],
+				getIgnorePatterns: () => [],
+				getPathRewriteTargets: () => [],
+				getSkillsSubdir: () => "commands",
+			};
+		}
+
+		it("linkEnvironment refuses a target that escapes the config dir", async () => {
+			const env = createEscapingEnv();
+			await expect(linkEnvironment(env, syncRepoDir, backupDir)).rejects.toThrow(/escapes/);
+			// Confirm nothing was created up at the parent.
+			expect(fs.existsSync(path.join(tmpDir, "escape.md"))).toBe(false);
+		});
+
+		it("unlinkEnvironment refuses a target that escapes the config dir", async () => {
+			const env = createEscapingEnv();
+			await expect(unlinkEnvironment(env, syncRepoDir)).rejects.toThrow(/escapes/);
+		});
+	});
 });

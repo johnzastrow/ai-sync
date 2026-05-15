@@ -1,6 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { Environment } from "./environment.js";
+import { isInside } from "./safe-fs.js";
 
 /**
  * Result of a link or unlink operation for one environment.
@@ -91,6 +92,17 @@ export async function linkEnvironment(
 		const configPath = path.join(configDir, target);
 		const repoPath = path.join(repoSubdir, target);
 
+		// Defense in depth: today every `target` comes from a hardcoded env
+		// constant, but a future env-defined sync target with a `..` segment
+		// would let path.join resolve outside the expected tree and place a
+		// symlink at, say, ~/.ssh/authorized_keys. Refuse anything that does
+		// not stay inside its respective root.
+		if (!isInside(configDir, configPath) || !isInside(repoSubdir, repoPath)) {
+			throw new Error(
+				`Refusing to link target '${target}' that escapes its root for env '${env.id}'`,
+			);
+		}
+
 		// Check if already a symlink pointing to the right place
 		try {
 			const linkTarget = await fs.readlink(configPath.replace(/\/$/, ""));
@@ -178,6 +190,15 @@ export async function unlinkEnvironment(
 		const repoTarget = isDir
 			? path.join(repoSubdir, target).replace(/\/$/, "")
 			: path.join(repoSubdir, target);
+
+		// Same defense-in-depth as linkEnvironment: refuse to operate on a
+		// target that escapes its root via `..` segments, lest we `fs.rm`
+		// something outside the config dir.
+		if (!isInside(configDir, configTarget) || !isInside(repoSubdir, repoTarget)) {
+			throw new Error(
+				`Refusing to unlink target '${target}' that escapes its root for env '${env.id}'`,
+			);
+		}
 
 		// Check if it's a symlink
 		try {

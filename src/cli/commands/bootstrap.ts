@@ -9,6 +9,7 @@ import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
 import { makeAllowlistFn, needsPathRewrite } from "../../core/env-helpers.js";
 import { detectRepoVersion } from "../../core/migration.js";
 import { expandPathsForLocal } from "../../core/path-rewriter.js";
+import { safeWriteInside } from "../../core/safe-fs.js";
 import { scanDirectory } from "../../core/scanner.js";
 import { installSkills } from "../../core/skills.js";
 import { isGitRepo } from "../../git/repo.js";
@@ -23,6 +24,30 @@ export function parseSshHost(repoUrl: string): string | null {
 	if (repoUrl.startsWith("http://") || repoUrl.startsWith("https://")) return null;
 	const sshMatch = repoUrl.match(/^(?:ssh:\/\/)?(?:[^@\s]+@)([^:/\s]+)/);
 	return sshMatch?.[1] ?? null;
+}
+
+/**
+ * Validates a repository URL before handing it to `git clone`.
+ *
+ * Rejects:
+ *   - empty / non-string input
+ *   - leading `-` — `simple-git` passes the URL as argv (no shell), so the
+ *     only argv-level injection vector is git itself parsing the value as a
+ *     flag (e.g. `--upload-pack=...`). Anything starting with `-` is refused.
+ *
+ * Anything else — https, http, ssh, git protocol, scp-style `user@host:path`,
+ * and bare local paths used by tests and air-gapped workflows — is accepted.
+ * Containment of what `git clone` then materialises on disk is enforced by
+ * `safeWriteInside` and the scanner; this guard only filters values that
+ * would make `git` itself act surprisingly.
+ */
+export function validateRepoUrl(url: string): void {
+	if (typeof url !== "string" || url === "") {
+		throw new Error("Repository URL is empty");
+	}
+	if (url.startsWith("-")) {
+		throw new Error(`Repository URL must not start with '-': ${url}`);
+	}
 }
 
 /**
@@ -102,6 +127,9 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		await fs.rm(syncRepoDir, { recursive: true, force: true });
 	}
 
+	// Allowlist-validate the URL scheme before anything else.
+	validateRepoUrl(options.repoUrl);
+
 	// Validate SSH connectivity for SSH URLs before attempting clone
 	log("Checking SSH connectivity...");
 	const sshError = checkSshConnectivity(options.repoUrl);
@@ -133,8 +161,9 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 			const repoSubdir = path.join(syncRepoDir, env.id);
 			const allowlistFn = makeAllowlistFn(env);
 
-			// Create config dir if needed
+			// Create config dir if needed and resolve realpath for containment checks
 			await fs.mkdir(configDir, { recursive: true });
+			const configDirReal = await fs.realpath(configDir);
 
 			// Backup existing config
 			try {
@@ -164,14 +193,14 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 				log(`Found ${repoFiles.length} files for ${env.id}`);
 				for (const relativePath of repoFiles) {
 					const srcPath = path.join(repoSubdir, relativePath);
-					const destPath = path.join(configDir, relativePath);
-					await fs.mkdir(path.dirname(destPath), { recursive: true });
 					let content = await fs.readFile(srcPath, "utf-8");
 					if (needsPathRewrite(relativePath, env)) {
 						log(`Expanding paths in ${relativePath}`);
 						content = expandPathsForLocal(content, envHomeDir);
 					}
-					await fs.writeFile(destPath, content);
+					await safeWriteInside(configDirReal, relativePath, content, {
+						preserveModeFromSrc: srcPath,
+					});
 				}
 				totalApplied += repoFiles.length;
 			} catch {
@@ -190,6 +219,7 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		// v1 flat mode
 		log("Using v1 flat mode");
 		await fs.mkdir(claudeDir, { recursive: true });
+		const claudeDirReal = await fs.realpath(claudeDir);
 
 		// Backup existing config
 		try {
@@ -206,13 +236,13 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		const repoFiles = await scanDirectory(syncRepoDir);
 		for (const relativePath of repoFiles) {
 			const srcPath = path.join(syncRepoDir, relativePath);
-			const destPath = path.join(claudeDir, relativePath);
-			await fs.mkdir(path.dirname(destPath), { recursive: true });
 			let content = await fs.readFile(srcPath, "utf-8");
 			if (path.basename(relativePath) === "settings.json") {
 				content = expandPathsForLocal(content, homeDir);
 			}
-			await fs.writeFile(destPath, content);
+			await safeWriteInside(claudeDirReal, relativePath, content, {
+				preserveModeFromSrc: srcPath,
+			});
 		}
 		totalApplied = repoFiles.length;
 
