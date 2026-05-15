@@ -9,6 +9,8 @@ import {
 	getInstallDir,
 	getOpenCodeConfigDir,
 	getSyncRepoDir,
+	isSafeFilename,
+	isSafeRelativePath,
 	normalizePath,
 } from "../../src/platform/paths.js";
 
@@ -43,6 +45,83 @@ describe("normalizePath", () => {
 
 	it("handles multiple consecutive backslashes", () => {
 		expect(normalizePath("a\\\\b\\c")).toBe("a//b/c");
+	});
+});
+
+describe("isSafeFilename", () => {
+	it("accepts ordinary filenames", () => {
+		expect(isSafeFilename("settings.json")).toBe(true);
+		expect(isSafeFilename("CLAUDE.md")).toBe(true);
+		expect(isSafeFilename("a-skill_v2.md")).toBe(true);
+	});
+
+	it("rejects empty / current / parent segment markers", () => {
+		expect(isSafeFilename("")).toBe(false);
+		expect(isSafeFilename(".")).toBe(false);
+		expect(isSafeFilename("..")).toBe(false);
+	});
+
+	it("rejects embedded NUL bytes", () => {
+		expect(isSafeFilename("good\0evil")).toBe(false);
+	});
+
+	it("rejects NTFS alternate-data-stream colons", () => {
+		expect(isSafeFilename("secret.txt:hidden")).toBe(false);
+		expect(isSafeFilename("a:b")).toBe(false);
+	});
+
+	it("rejects segments ending in '.' or whitespace (Windows path traps)", () => {
+		expect(isSafeFilename("file.")).toBe(false);
+		expect(isSafeFilename("file ")).toBe(false);
+		expect(isSafeFilename("file\t")).toBe(false);
+	});
+
+	it("rejects Windows reserved device basenames, case-insensitively", () => {
+		expect(isSafeFilename("CON")).toBe(false);
+		expect(isSafeFilename("con")).toBe(false);
+		expect(isSafeFilename("PRN")).toBe(false);
+		expect(isSafeFilename("NUL")).toBe(false);
+		expect(isSafeFilename("AUX")).toBe(false);
+		expect(isSafeFilename("COM1")).toBe(false);
+		expect(isSafeFilename("lpt9")).toBe(false);
+	});
+
+	it("rejects Windows reserved names even with an extension", () => {
+		expect(isSafeFilename("con.md")).toBe(false);
+		expect(isSafeFilename("COM3.txt")).toBe(false);
+	});
+
+	it("accepts names that merely contain a reserved word", () => {
+		expect(isSafeFilename("CONFIG.md")).toBe(true);
+		expect(isSafeFilename("auxiliary.md")).toBe(true);
+	});
+});
+
+describe("isSafeRelativePath", () => {
+	it("accepts ordinary nested paths", () => {
+		expect(isSafeRelativePath("agents/default.md")).toBe(true);
+		expect(isSafeRelativePath("plugins/cache/x/y/z.json")).toBe(true);
+		expect(isSafeRelativePath("a")).toBe(true);
+	});
+
+	it("rejects the empty path", () => {
+		expect(isSafeRelativePath("")).toBe(false);
+	});
+
+	it("rejects any segment containing '..' or '.'", () => {
+		expect(isSafeRelativePath("a/../b")).toBe(false);
+		expect(isSafeRelativePath("./a")).toBe(false);
+		expect(isSafeRelativePath("a/.")).toBe(false);
+	});
+
+	it("rejects a path with an unsafe segment anywhere", () => {
+		expect(isSafeRelativePath("ok/CON/file.md")).toBe(false);
+		expect(isSafeRelativePath("ok/inner:ads/file.md")).toBe(false);
+		expect(isSafeRelativePath("ok/dot./file.md")).toBe(false);
+	});
+
+	it("rejects paths with empty interior segments (consecutive slashes)", () => {
+		expect(isSafeRelativePath("a//b")).toBe(false);
 	});
 });
 

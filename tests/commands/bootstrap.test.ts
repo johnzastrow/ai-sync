@@ -8,6 +8,7 @@ import {
 	handleBootstrap,
 	parseSshHost,
 	registerBootstrapCommand,
+	validateRepoUrl,
 } from "../../src/cli/commands/bootstrap.js";
 import { isGitRepo } from "../../src/git/repo.js";
 
@@ -400,5 +401,46 @@ describe("parseSshHost", () => {
 		expect(parseSshHost("/some/local/path")).toBeNull();
 		expect(parseSshHost("./relative/path")).toBeNull();
 		expect(parseSshHost("file:///tmp/repo")).toBeNull();
+	});
+});
+
+describe("validateRepoUrl", () => {
+	it("rejects empty string", () => {
+		expect(() => validateRepoUrl("")).toThrow(/empty/i);
+	});
+
+	// The leading-`-` guard is the load-bearing check: simple-git passes the
+	// URL as argv (no shell), so the only argv-level vector left is git
+	// itself parsing a `-foo` value as a flag (e.g. `--upload-pack=...`).
+	it("rejects a value starting with '-' that git would parse as a flag", () => {
+		expect(() => validateRepoUrl("-upload-pack=evil")).toThrow(/must not start with '-'/);
+		expect(() => validateRepoUrl("--upload-pack=evil")).toThrow(/must not start with '-'/);
+	});
+
+	it("accepts https URLs", () => {
+		expect(() => validateRepoUrl("https://github.com/foo/bar.git")).not.toThrow();
+	});
+
+	it("accepts http URLs", () => {
+		expect(() => validateRepoUrl("http://example.com/foo/bar.git")).not.toThrow();
+	});
+
+	it("accepts ssh URLs in both forms", () => {
+		expect(() => validateRepoUrl("ssh://git@github.com/foo/bar.git")).not.toThrow();
+		expect(() => validateRepoUrl("git@github.com:foo/bar.git")).not.toThrow();
+	});
+
+	it("accepts the git:// scheme", () => {
+		expect(() => validateRepoUrl("git://example.com/foo/bar.git")).not.toThrow();
+	});
+
+	it("accepts bare local paths (used by tests and air-gapped workflows)", () => {
+		// Containment for what git materialises on disk is enforced elsewhere
+		// (safeWriteInside, scanner). validateRepoUrl only filters values that
+		// would make git itself act surprisingly.
+		expect(() => validateRepoUrl("/tmp/local-repo")).not.toThrow();
+		expect(() => validateRepoUrl("C:\\Users\\me\\repo")).not.toThrow();
+		expect(() => validateRepoUrl("./relative")).not.toThrow();
+		expect(() => validateRepoUrl("file:///tmp/repo")).not.toThrow();
 	});
 });

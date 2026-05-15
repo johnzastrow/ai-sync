@@ -1,3 +1,5 @@
+import * as path from "node:path";
+
 /**
  * Default sync targets: the allowlist of files and directories to sync from ~/.claude.
  *
@@ -39,13 +41,34 @@ export const PLUGIN_IGNORE_PATTERNS: readonly string[] = [
 ] as const;
 
 /**
+ * Normalises a relative path for allowlist checks.
+ *
+ * Returns the cleaned forward-slash form, or `null` if the input is unsafe
+ * (absolute, contains `..` or `.` segments, or empty after cleaning). The
+ * caller treats `null` as "deny".
+ */
+function normaliseForAllowlist(relativePath: string): string | null {
+	if (typeof relativePath !== "string" || relativePath === "") return null;
+	const cleaned = relativePath.replaceAll("\\", "/");
+	if (path.posix.isAbsolute(cleaned)) return null;
+	const segments = cleaned.split("/");
+	for (const seg of segments) {
+		if (seg === "" || seg === "." || seg === "..") return null;
+	}
+	return segments.join("/");
+}
+
+/**
  * Checks whether a relative path is allowed by the sync manifest.
  *
  * Allowlist behavior: only known paths are included, everything else is rejected.
  * Ignore patterns take priority over sync patterns.
  *
- * Accepts optional custom lists for environment-specific allowlists.
- * Falls back to the defaults (Claude Code targets) when not provided.
+ * Defensive normalisation: absolute paths, paths containing `..` or `.`
+ * segments, paths with embedded backslashes that survive `normalizePath`,
+ * and empty paths are rejected up front. Today's only caller builds
+ * relative paths from `readdir` basenames so traversal segments can't
+ * appear; this guard is for external callers and any future code path.
  */
 export function isPathAllowed(
 	relativePath: string,
@@ -53,13 +76,16 @@ export function isPathAllowed(
 	pluginPatterns?: readonly string[],
 	ignorePatterns?: readonly string[],
 ): boolean {
+	const rel = normaliseForAllowlist(relativePath);
+	if (rel === null) return false;
+
 	const targets = syncTargets ?? DEFAULT_SYNC_TARGETS;
 	const plugins = pluginPatterns ?? PLUGIN_SYNC_PATTERNS;
 	const ignores = ignorePatterns ?? PLUGIN_IGNORE_PATTERNS;
 
 	// Check ignore patterns first (these always win)
 	for (const pattern of ignores) {
-		if (relativePath === pattern) {
+		if (rel === pattern) {
 			return false;
 		}
 	}
@@ -68,12 +94,12 @@ export function isPathAllowed(
 	for (const target of targets) {
 		if (target.endsWith("/")) {
 			// Directory target: match any file nested under it
-			if (relativePath.startsWith(target)) {
+			if (rel.startsWith(target)) {
 				return true;
 			}
 		} else {
 			// File target: exact match
-			if (relativePath === target) {
+			if (rel === target) {
 				return true;
 			}
 		}
@@ -83,12 +109,12 @@ export function isPathAllowed(
 	for (const pattern of plugins) {
 		if (pattern.endsWith("/")) {
 			// Directory pattern: match any file nested under it
-			if (relativePath.startsWith(pattern)) {
+			if (rel.startsWith(pattern)) {
 				return true;
 			}
 		} else {
 			// File pattern: exact match
-			if (relativePath === pattern) {
+			if (rel === pattern) {
 				return true;
 			}
 		}

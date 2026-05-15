@@ -127,5 +127,49 @@ describe("safe-fs containment (CRIT-2 helper)", () => {
 			expect(stat.mode & 0o2000).toBe(0); // setgid stripped
 			expect(stat.mode & 0o1000).toBe(0); // sticky stripped
 		});
+
+		describe("unsafe relPath refusal", () => {
+			it("refuses relPaths containing '..'", async () => {
+				const rootReal = await fs.realpath(rootDir);
+				await expect(
+					safeWriteInside(rootReal, "agents/../escape.md", "x"),
+				).rejects.toThrow(/unsafe relative path/);
+				// And confirm nothing was created up at the rootReal parent.
+				await expect(
+					fs.access(path.join(path.dirname(rootReal), "escape.md")),
+				).rejects.toThrow();
+			});
+
+			it("refuses absolute relPaths", async () => {
+				const rootReal = await fs.realpath(rootDir);
+				await expect(
+					safeWriteInside(rootReal, "/etc/passwd", "x"),
+				).rejects.toThrow(/unsafe relative path/);
+			});
+
+			it("refuses Windows reserved-name segments", async () => {
+				const rootReal = await fs.realpath(rootDir);
+				await expect(
+					safeWriteInside(rootReal, "CON", "x"),
+				).rejects.toThrow(/unsafe relative path/);
+				await expect(
+					safeWriteInside(rootReal, "agents/con.md", "x"),
+				).rejects.toThrow(/unsafe relative path/);
+			});
+
+			it("refuses NTFS alternate-data-stream colons", async () => {
+				const rootReal = await fs.realpath(rootDir);
+				await expect(
+					safeWriteInside(rootReal, "settings.json:hidden", "x"),
+				).rejects.toThrow(/unsafe relative path/);
+			});
+
+			it("refuses an empty relPath", async () => {
+				const rootReal = await fs.realpath(rootDir);
+				await expect(safeWriteInside(rootReal, "", "x")).rejects.toThrow(
+					/unsafe relative path/,
+				);
+			});
+		});
 	});
 });

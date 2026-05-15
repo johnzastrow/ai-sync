@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { isSafeRelativePath } from "../platform/paths.js";
 
 // Available on POSIX, undefined on Windows. The `?? 0` fallback below lets the
 // flag be a no-op on platforms that do not support it; the lstat-then-unlink
@@ -43,7 +44,15 @@ export async function safeWriteInside(
 	content: string,
 	options?: SafeWriteOptions,
 ): Promise<void> {
-	const dest = path.join(rootReal, relPath);
+	// Per-segment validation: reject Windows reserved names, NTFS alternate
+	// data streams, embedded nulls, and trailing-dot/space ambiguities before
+	// touching the filesystem. relPath uses forward slashes by contract.
+	const relNormalised = relPath.replaceAll("\\", "/");
+	if (!isSafeRelativePath(relNormalised)) {
+		throw new Error(`Refusing to write unsafe relative path: ${relPath}`);
+	}
+
+	const dest = path.join(rootReal, relNormalised);
 	const destDir = path.dirname(dest);
 	await fs.mkdir(destDir, { recursive: true });
 

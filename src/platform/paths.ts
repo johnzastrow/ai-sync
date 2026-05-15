@@ -14,6 +14,70 @@ export function normalizePath(relativePath: string): string {
 	return relativePath.replaceAll("\\", "/");
 }
 
+const WINDOWS_RESERVED_BASENAMES: ReadonlySet<string> = new Set([
+	"CON",
+	"PRN",
+	"AUX",
+	"NUL",
+	"COM1",
+	"COM2",
+	"COM3",
+	"COM4",
+	"COM5",
+	"COM6",
+	"COM7",
+	"COM8",
+	"COM9",
+	"LPT1",
+	"LPT2",
+	"LPT3",
+	"LPT4",
+	"LPT5",
+	"LPT6",
+	"LPT7",
+	"LPT8",
+	"LPT9",
+]);
+
+/**
+ * Returns true iff `name` is a single path segment that is safe to materialise
+ * on disk across POSIX and Windows.
+ *
+ * Rejects:
+ *   - empty / `.` / `..`
+ *   - NUL bytes
+ *   - colons (NTFS alternate data streams, e.g. `secret.txt:hidden`)
+ *   - segments ending in `.` or whitespace (Windows path-rule traps)
+ *   - Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9),
+ *     case-insensitive, with or without an extension (e.g. `con.md` is still
+ *     reserved)
+ *
+ * Does NOT consider `/` or `\\` — callers should split on the path separator
+ * first and validate each segment individually.
+ */
+export function isSafeFilename(name: string): boolean {
+	if (typeof name !== "string" || name === "" || name === "." || name === "..") return false;
+	if (name.includes("\0") || name.includes(":")) return false;
+	if (name.endsWith(".") || /\s$/.test(name)) return false;
+	const base = name.split(".")[0].toUpperCase();
+	if (WINDOWS_RESERVED_BASENAMES.has(base)) return false;
+	return true;
+}
+
+/**
+ * Returns true iff every `/`-separated segment of `relativePath` passes
+ * {@link isSafeFilename}. The path itself must be relative (no leading `/`),
+ * but interior segments are not otherwise constrained — backslashes should be
+ * normalised first via {@link normalizePath}.
+ */
+export function isSafeRelativePath(relativePath: string): boolean {
+	if (relativePath === "") return false;
+	for (const seg of relativePath.split("/")) {
+		if (!isSafeFilename(seg)) return false;
+	}
+	return true;
+}
+
 /**
  * Returns the user's home directory.
  */

@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { normalizePath } from "../platform/paths.js";
+import { isSafeFilename, normalizePath } from "../platform/paths.js";
 import { isPathAllowed } from "./manifest.js";
 import { isInside } from "./safe-fs.js";
 
@@ -58,6 +58,15 @@ async function scanDir(
 	}
 
 	for (const entry of entries) {
+		// Refuse pathological filenames per-segment (Windows reserved names,
+		// alternate-data-stream colons, trailing dots/spaces, embedded nulls).
+		if (!isSafeFilename(entry.name)) {
+			console.warn(
+				`ai-sync: skipping unsafe filename '${entry.name}' under ${dirPath}`,
+			);
+			continue;
+		}
+
 		const relativePath = normalizePath(prefix ? `${prefix}/${entry.name}` : entry.name);
 
 		if (

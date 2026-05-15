@@ -27,6 +27,30 @@ export function parseSshHost(repoUrl: string): string | null {
 }
 
 /**
+ * Validates a repository URL before handing it to `git clone`.
+ *
+ * Rejects:
+ *   - empty / non-string input
+ *   - leading `-` — `simple-git` passes the URL as argv (no shell), so the
+ *     only argv-level injection vector is git itself parsing the value as a
+ *     flag (e.g. `--upload-pack=...`). Anything starting with `-` is refused.
+ *
+ * Anything else — https, http, ssh, git protocol, scp-style `user@host:path`,
+ * and bare local paths used by tests and air-gapped workflows — is accepted.
+ * Containment of what `git clone` then materialises on disk is enforced by
+ * `safeWriteInside` and the scanner; this guard only filters values that
+ * would make `git` itself act surprisingly.
+ */
+export function validateRepoUrl(url: string): void {
+	if (typeof url !== "string" || url === "") {
+		throw new Error("Repository URL is empty");
+	}
+	if (url.startsWith("-")) {
+		throw new Error(`Repository URL must not start with '-': ${url}`);
+	}
+}
+
+/**
  * Checks SSH connectivity to the host in the given URL.
  * Returns null on success (or when the URL isn't SSH), or an error message string on failure.
  */
@@ -102,6 +126,9 @@ export async function handleBootstrap(options: BootstrapOptions): Promise<Bootst
 		log("Removing existing sync repo (--force)...");
 		await fs.rm(syncRepoDir, { recursive: true, force: true });
 	}
+
+	// Allowlist-validate the URL scheme before anything else.
+	validateRepoUrl(options.repoUrl);
 
 	// Validate SSH connectivity for SSH URLs before attempting clone
 	log("Checking SSH connectivity...");
