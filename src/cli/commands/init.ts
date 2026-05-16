@@ -178,11 +178,16 @@ export function registerInitCommand(program: Command): void {
 		.description("Initialize a git-backed sync repo from local config")
 		.option("--force", "Re-initialize an existing sync repo", false)
 		.option("--repo-path <path>", "Custom path for the sync repo", getSyncRepoDir())
-		.action(async (opts: { force: boolean; repoPath: string }) => {
+		// No default: handleInit treats an explicit claudeDir as "single-env
+		// (v1) mode". Defaulting it here would silently disable multi-env
+		// detection for every real invocation.
+		.option("--claude-dir <path>", "Custom ~/.claude path (forces single-env mode)")
+		.action(async (opts: { force: boolean; repoPath: string; claudeDir?: string }) => {
 			try {
 				const result = await handleInit({
 					force: opts.force,
 					repoPath: opts.repoPath,
+					claudeDir: opts.claudeDir,
 				});
 
 				console.log(pc.green(`Sync repo initialized at ${result.syncRepoDir}`));

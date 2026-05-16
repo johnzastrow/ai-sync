@@ -13,7 +13,7 @@ async function createTestEnv(baseDir: string) {
 
 	// Create bare remote repo
 	await fs.mkdir(bareDir, { recursive: true });
-	await simpleGit(bareDir).init(true);
+	await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 	// Create sync repo with remote
 	await fs.mkdir(syncRepoDir, { recursive: true });
@@ -45,7 +45,7 @@ describe("dry-run mode", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	it("push --dry-run reports changes without pushing", async () => {

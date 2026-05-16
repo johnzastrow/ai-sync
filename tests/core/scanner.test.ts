@@ -3,6 +3,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { scanDirectory } from "../../src/core/scanner.js";
+import { canCreateSymlinks } from "../security/_can-symlink.js";
+
+// `fs.symlink` returns EPERM on Windows without Developer Mode. The scanner's
+// symlink-following / loop-prevention behaviour can't be exercised without
+// creating real symlinks, so those tests skip on such runners.
+const itSymlink = canCreateSymlinks ? it : it.skip;
 
 describe("scanner", () => {
 	let tmpDir: string;
@@ -96,7 +102,7 @@ describe("scanner", () => {
 		expect(result).toContain("keybindings.json");
 	});
 
-	it("follows symlinked files", async () => {
+	itSymlink("follows symlinked files", async () => {
 		await createFile("CLAUDE.md", "# Real file");
 		// Create a symlink to an allowed file
 		await fs.symlink(path.join(tmpDir, "CLAUDE.md"), path.join(tmpDir, "settings.json"));
@@ -107,7 +113,7 @@ describe("scanner", () => {
 		expect(result).toContain("settings.json");
 	});
 
-	it("follows symlinked directories", async () => {
+	itSymlink("follows symlinked directories", async () => {
 		// Create an external directory with files
 		const externalDir = path.join(tmpDir, "_external");
 		await fs.mkdir(externalDir, { recursive: true });
@@ -121,7 +127,7 @@ describe("scanner", () => {
 		expect(result).toContain("commands/gw/skill.md");
 	});
 
-	it("prevents cycles from circular symlinks", async () => {
+	itSymlink("prevents cycles from circular symlinks", async () => {
 		// Create a directory with a symlink back to parent
 		await createFile("commands/real.md", "# Real");
 		await fs.symlink(tmpDir, path.join(tmpDir, "commands", "loop"));

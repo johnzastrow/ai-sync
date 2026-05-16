@@ -9,6 +9,13 @@ import {
 	linkEnvironment,
 	unlinkEnvironment,
 } from "../../src/core/linker.js";
+import { canCreateSymlinks } from "../security/_can-symlink.js";
+
+// On Windows without Developer Mode (and without admin), `fs.symlink` returns
+// EPERM. The linker's correctness relies on symlinks, so the link/unlink
+// behaviour tests are skipped on such runners. The containment tests fail
+// *before* any symlink call and stay enabled everywhere.
+const describeSymlinks = canCreateSymlinks ? describe : describe.skip;
 
 /** Minimal test environment for link tests. */
 function createTestEnv(configDir: string): Environment {
@@ -90,7 +97,7 @@ describe("core/linker", () => {
 		});
 	});
 
-	describe("linkEnvironment", () => {
+	describeSymlinks("linkEnvironment", () => {
 		it("creates symlinks from config dir to repo", async () => {
 			const env = createTestEnv(configDir);
 
@@ -203,7 +210,7 @@ describe("core/linker", () => {
 		});
 	});
 
-	describe("unlinkEnvironment", () => {
+	describeSymlinks("unlinkEnvironment", () => {
 		it("replaces symlinks with copies", async () => {
 			const env = createTestEnv(configDir);
 

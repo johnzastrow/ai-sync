@@ -26,7 +26,7 @@ describe("git/repo", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	describe("initRepo", () => {
@@ -103,7 +103,7 @@ describe("git/repo", () => {
 
 		beforeEach(async () => {
 			bareDir = await fs.mkdtemp(path.join(os.tmpdir(), "bare-repo-"));
-			await simpleGit(bareDir).init(true);
+			await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 			await initRepo(tmpDir);
 			// Configure git user for commits in tmpDir
 			await simpleGit(tmpDir).addConfig("user.email", "test@test.com");
@@ -111,7 +111,7 @@ describe("git/repo", () => {
 		});
 
 		afterEach(async () => {
-			await fs.rm(bareDir, { recursive: true, force: true });
+			await fs.rm(bareDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 		});
 
 		describe("hasRemote", () => {
@@ -187,7 +187,7 @@ describe("git/repo", () => {
 				await simpleGit(cloneDir).clone(bareDir, ".");
 				const content = await fs.readFile(path.join(cloneDir, "file.txt"), "utf-8");
 				expect(content).toBe("content");
-				await fs.rm(cloneDir, { recursive: true, force: true });
+				await fs.rm(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 			});
 		});
 
@@ -215,7 +215,7 @@ describe("git/repo", () => {
 
 				const content = await fs.readFile(path.join(tmpDir, "file.txt"), "utf-8");
 				expect(content).toBe("updated");
-				await fs.rm(cloneDir, { recursive: true, force: true });
+				await fs.rm(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 			});
 		});
 
@@ -251,7 +251,7 @@ describe("git/repo", () => {
 				const status = await getStatus(tmpDir);
 				expect(status.behind).toBeGreaterThan(0);
 
-				await fs.rm(cloneDir, { recursive: true, force: true });
+				await fs.rm(cloneDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 			});
 		});
 	});

@@ -20,7 +20,7 @@ describe("migration", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	async function createV1Repo(): Promise<string> {
@@ -29,7 +29,7 @@ describe("migration", () => {
 
 		// Create bare remote
 		await fs.mkdir(bareDir, { recursive: true });
-		await simpleGit(bareDir).init(true);
+		await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 		// Create sync repo
 		await fs.mkdir(syncRepoDir, { recursive: true });
