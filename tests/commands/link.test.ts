@@ -9,6 +9,12 @@ import { linkEnvironment, unlinkEnvironment } from "../../src/core/linker.js";
 import { detectRepoVersion } from "../../src/core/migration.js";
 import type { Environment } from "../../src/core/environment.js";
 import { addFiles, addRemote, commitFiles, initRepo } from "../../src/git/repo.js";
+import { canCreateSymlinks } from "../security/_can-symlink.js";
+
+// Link/unlink integration tests require a symlink-capable runner. Windows
+// without Developer Mode returns EPERM from fs.symlink, so the tests skip
+// there. POSIX runners (Linux, macOS) run everything.
+const describeSymlinks = canCreateSymlinks ? describe : describe.skip;
 
 /**
  * Creates a minimal Claude-like test environment for linking tests.
@@ -34,7 +40,7 @@ async function setupV2SyncRepo(baseDir: string) {
 	const syncRepoDir = path.join(baseDir, "sync-repo");
 
 	await fs.mkdir(bareDir, { recursive: true });
-	await simpleGit(bareDir).init(true);
+	await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 	await fs.mkdir(syncRepoDir, { recursive: true });
 	await initRepo(syncRepoDir);
@@ -65,7 +71,7 @@ describe("link command (integration)", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	describe("detectRepoVersion", () => {
@@ -84,7 +90,7 @@ describe("link command (integration)", () => {
 		});
 	});
 
-	describe("linkEnvironment", () => {
+	describeSymlinks("linkEnvironment", () => {
 		it("creates symlinks from config dir to sync repo", async () => {
 			const { syncRepoDir } = await setupV2SyncRepo(tmpDir);
 			const configDir = path.join(tmpDir, "home", ".claude");
@@ -217,7 +223,7 @@ describe("link command (integration)", () => {
 		});
 	});
 
-	describe("unlinkEnvironment", () => {
+	describeSymlinks("unlinkEnvironment", () => {
 		it("replaces symlinks with copies of repo content", async () => {
 			const { syncRepoDir } = await setupV2SyncRepo(tmpDir);
 			const configDir = path.join(tmpDir, "home", ".claude");
@@ -290,7 +296,7 @@ describe("link command (integration)", () => {
 		});
 	});
 
-	describe("link + unlink roundtrip", () => {
+	describeSymlinks("link + unlink roundtrip", () => {
 		it("preserves file content through link/unlink cycle", async () => {
 			const { syncRepoDir } = await setupV2SyncRepo(tmpDir);
 			const configDir = path.join(tmpDir, "home", ".claude");
@@ -317,7 +323,7 @@ describe("link command (integration)", () => {
 	});
 });
 
-describe("link/unlink CLI action (integration)", () => {
+describeSymlinks("link/unlink CLI action (integration)", () => {
 	let tmpDir: string;
 	let logSpy: ReturnType<typeof vi.spyOn>;
 	let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -335,7 +341,7 @@ describe("link/unlink CLI action (integration)", () => {
 		logSpy.mockRestore();
 		errorSpy.mockRestore();
 		process.exitCode = savedExitCode;
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	function createProgram(): Command {

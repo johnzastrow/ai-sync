@@ -65,7 +65,7 @@ describe("init command (integration)", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	it("creates a valid git repo at sync repo path", async () => {
@@ -216,7 +216,7 @@ describe("init CLI action (integration)", () => {
 		logSpy.mockRestore();
 		errorSpy.mockRestore();
 		process.exitCode = savedExitCode;
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	function createProgram(): Command {
@@ -230,7 +230,18 @@ describe("init CLI action (integration)", () => {
 		const syncRepoDir = path.join(tmpDir, "sync-repo");
 		const program = createProgram();
 
-		await program.parseAsync(["node", "test", "init", "--repo-path", syncRepoDir]);
+		// Pass --claude-dir so init operates on the test's mock config dir
+		// rather than the runner's real ~/.claude (which is large, grows over
+		// time, and made this test time out).
+		await program.parseAsync([
+			"node",
+			"test",
+			"init",
+			"--repo-path",
+			syncRepoDir,
+			"--claude-dir",
+			claudeDir,
+		]);
 
 		const output = logSpy.mock.calls.map((c) => c[0]).join("\n");
 		expect(output).toContain("Sync repo initialized");

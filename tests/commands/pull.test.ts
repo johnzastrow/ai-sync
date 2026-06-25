@@ -21,7 +21,7 @@ async function createTestEnv(baseDir: string) {
 
 	// Create bare remote repo
 	await fs.mkdir(bareDir, { recursive: true });
-	await simpleGit(bareDir).init(true);
+	await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 	// Create sync repo with remote
 	await fs.mkdir(syncRepoDir, { recursive: true });
@@ -83,7 +83,7 @@ describe("pull command (integration)", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	it("applies remote changes to claudeDir", async () => {
@@ -139,9 +139,13 @@ describe("pull command (integration)", () => {
 		// Pull back
 		const result = await handlePull({ repoPath: syncRepoDir, claudeDir });
 
+		// Parse rather than substring-match: on Windows, JSON encodes path
+		// separators as `\\` so a raw `homeDir` substring (single backslashes)
+		// never appears in the on-disk JSON.
 		const settingsContent = await fs.readFile(path.join(claudeDir, "settings.json"), "utf-8");
-		expect(settingsContent).toContain(homeDir);
 		expect(settingsContent).not.toContain("{{HOME}}");
+		const settings = JSON.parse(settingsContent) as { projectDir: string };
+		expect(settings.projectDir.startsWith(homeDir)).toBe(true);
 		expect(result.filesApplied).toBeGreaterThan(0);
 	});
 
@@ -181,7 +185,7 @@ describe("pull CLI action (integration)", () => {
 		logSpy.mockRestore();
 		errorSpy.mockRestore();
 		process.exitCode = savedExitCode;
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	function createProgram(): Command {

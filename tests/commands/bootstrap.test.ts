@@ -59,7 +59,7 @@ describe("bootstrap command (integration)", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	it("clones remote repo to sync repo dir", async () => {
@@ -87,10 +87,15 @@ describe("bootstrap command (integration)", () => {
 			claudeDir,
 		});
 
-		// settings.json should have {{HOME}} expanded to the new machine home
+		// settings.json should have {{HOME}} expanded to the new machine home.
+		// Parse rather than substring-match: on Windows, JSON encodes path
+		// separators as `\\` so a raw `newMachineHome.includes` substring check
+		// would never find single-backslash paths in the file.
 		const settingsContent = await fs.readFile(path.join(claudeDir, "settings.json"), "utf-8");
-		expect(settingsContent).toContain(newMachineHome);
 		expect(settingsContent).not.toContain("{{HOME}}");
+		const settings = JSON.parse(settingsContent) as { hookPath: string; configDir: string };
+		expect(settings.hookPath.startsWith(newMachineHome)).toBe(true);
+		expect(settings.configDir.startsWith(newMachineHome)).toBe(true);
 
 		// Other files should be present
 		const claudeMd = await fs.readFile(path.join(claudeDir, "CLAUDE.md"), "utf-8");
@@ -301,7 +306,7 @@ describe("bootstrap CLI action (integration)", () => {
 		logSpy.mockRestore();
 		errorSpy.mockRestore();
 		process.exitCode = savedExitCode;
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	function createProgram(): Command {

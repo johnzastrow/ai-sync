@@ -21,7 +21,7 @@ async function createTestEnv(baseDir: string) {
 
 	// Create bare remote repo
 	await fs.mkdir(bareDir, { recursive: true });
-	await simpleGit(bareDir).init(true);
+	await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 	// Create sync repo with remote
 	await fs.mkdir(syncRepoDir, { recursive: true });
@@ -106,7 +106,7 @@ async function createV2TestEnv(baseDir: string) {
 
 	// Create bare remote repo
 	await fs.mkdir(bareDir, { recursive: true });
-	await simpleGit(bareDir).init(true);
+	await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 	// Create sync repo with remote
 	await fs.mkdir(syncRepoDir, { recursive: true });
@@ -173,7 +173,11 @@ describe("core/sync-engine", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		// Windows holds file locks on packfiles inside `.git` for a moment
+		// after a git child process exits; `maxRetries` / `retryDelay` give
+		// the OS a chance to release them. On POSIX nothing is retried
+		// because no EBUSY/EPERM is ever raised here.
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	describe("syncPush", () => {
@@ -388,10 +392,13 @@ describe("core/sync-engine", () => {
 
 			const result = await syncPull(pullOptions);
 
-			// settings.json should have expanded paths for new home
+			// settings.json should have expanded paths for new home. Parse the
+			// JSON instead of substring-matching — on Windows, `\` is escaped
+			// to `\\` in JSON, so a raw newHomeDir would never match.
 			const settingsContent = await fs.readFile(path.join(newClaudeDir, "settings.json"), "utf-8");
-			expect(settingsContent).toContain(newHomeDir);
 			expect(settingsContent).not.toContain("{{HOME}}");
+			const settings = JSON.parse(settingsContent) as { projectDir: string };
+			expect(settings.projectDir.startsWith(newHomeDir)).toBe(true);
 			expect(result.filesApplied).toBeGreaterThan(0);
 		});
 
@@ -1163,13 +1170,18 @@ describe("core/sync-engine", () => {
 
 			expect(pullResult.filesApplied).toBeGreaterThan(0);
 
-			// settings.json should have expanded paths for the new home
-			const settings = await fs.readFile(
+			// settings.json should have expanded paths for the new home. Parse
+			// rather than substring-matching: JSON escapes `\` to `\\` on
+			// Windows so a raw newHomeDir substring never appears.
+			const settingsRaw = await fs.readFile(
 				path.join(newClaudeDir, "settings.json"),
 				"utf-8",
 			);
-			expect(settings).toContain(newHomeDir);
-			expect(settings).not.toContain("{{HOME}}");
+			expect(settingsRaw).not.toContain("{{HOME}}");
+			const settings = JSON.parse(settingsRaw) as { projectDir?: string; [k: string]: unknown };
+			if (typeof settings.projectDir === "string") {
+				expect(settings.projectDir.startsWith(newHomeDir)).toBe(true);
+			}
 		});
 
 		it("creates backup of all environments before pull in v2", async () => {

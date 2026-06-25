@@ -21,7 +21,7 @@ async function createTestEnv(baseDir: string) {
 
 	// Create bare remote repo
 	await fs.mkdir(bareDir, { recursive: true });
-	await simpleGit(bareDir).init(true);
+	await simpleGit(bareDir).init(true, ["--initial-branch=main"]);
 
 	// Create sync repo with remote
 	await fs.mkdir(syncRepoDir, { recursive: true });
@@ -59,7 +59,7 @@ describe("status command (integration)", () => {
 	});
 
 	afterEach(async () => {
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	it("returns isClean: true when everything matches", async () => {
@@ -165,7 +165,7 @@ describe("status CLI action (integration)", () => {
 		logSpy.mockRestore();
 		errorSpy.mockRestore();
 		process.exitCode = savedExitCode;
-		await fs.rm(tmpDir, { recursive: true, force: true });
+		await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 	});
 
 	function createProgram(): Command {
