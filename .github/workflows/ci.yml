@@ -21,7 +21,7 @@ jobs:
       matrix:
         # Windows is first-class here: the suite has Windows-specific portability
         # fixes (see PR #3), so CI must actually exercise it.
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v5
       - name: Set up Node

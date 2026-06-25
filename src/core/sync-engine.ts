@@ -677,6 +677,26 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 				remoteContent = expandPathsForLocal(remoteContent, homeDir);
 			}
 
+			// A synced config file must never be a symlink on disk. If the
+			// destination is one, do NOT follow it: reading through it would leak
+			// the link target's content into the diff, and the conflict branch
+			// below would leave the escaping link in place. Force a clean
+			// overwrite — safeWriteInside unlinks the symlink and writes a regular
+			// file strictly inside the boundary.
+			let destIsSymlink = false;
+			try {
+				destIsSymlink = (await fs.lstat(destPath)).isSymbolicLink();
+			} catch {
+				// destination doesn't exist — the normal path below handles it
+			}
+			if (destIsSymlink) {
+				await safeWriteInside(claudeDirReal, relativePath, remoteContent, {
+					preserveModeFromSrc: srcPath,
+				});
+				allFileChanges.push({ path: relativePath, type: "modified" });
+				continue;
+			}
+
 			// Read local file
 			let localContent: string | null = null;
 			try {
