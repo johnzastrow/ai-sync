@@ -205,20 +205,40 @@ ai-sync push -v               # show detailed file changes
 
 ### `ai-sync pull`
 
-Fetches remote changes and applies them to local config directories. Always creates a timestamped backup first.
+Fetches remote changes and applies them to local config directories. Always
+creates a timestamped backup first. On 3-way merge conflicts, ai-sync uses the
+[AI-assisted merge](#ai-assisted-merge) flow.
 
 ```bash
 ai-sync pull
 ai-sync pull -v               # show detailed file changes
+ai-sync pull --auto-apply     # apply AI merges directly instead of staging them
 ```
 
 ### `ai-sync status`
 
-Shows local modifications, remote drift, and excluded file count.
+Shows local modifications, remote drift, and excluded file count. With
+`--summarize`, asks the configured AI resolver for a natural-language summary
+of the drift (see [AI-assisted merge](#ai-assisted-merge) below).
 
 ```bash
 ai-sync status
-ai-sync status -v             # include branch, tracking info, synced file count
+ai-sync status -v             # include branch, tracking info, synced file count, pending merges
+ai-sync status --summarize    # AI-generated summary of local/remote drift
+```
+
+### `ai-sync resolve`
+
+Manage pending AI merges produced by `ai-sync pull`. See
+[AI-assisted merge](#ai-assisted-merge) below.
+
+```bash
+ai-sync resolve list                # list pending merges
+ai-sync resolve diff <path>         # show the staged merge vs the live file
+ai-sync resolve accept <path>       # apply a staged merge
+ai-sync resolve accept --all        # apply every pending merge
+ai-sync resolve reject <path>       # discard a staged merge
+ai-sync resolve reject --all        # discard every pending merge
 ```
 
 ### `ai-sync bootstrap <repo-url>`
@@ -231,11 +251,9 @@ ai-sync bootstrap https://github.com/you/ai-config.git
 ai-sync bootstrap <url> --force   # re-clone if sync repo exists
 ```
 
-> **SSH note:** If bootstrapping via an SSH URL (`git@...`) from a host you have not connected to before, SSH will prompt you to verify the host key fingerprint. This is expected — confirm it matches the server's published fingerprint before accepting.
-
 ### `ai-sync update`
 
-Checks for and applies tool updates. ai-sync also checks for available updates once every 24 hours on startup and prints a notification if one is found — **updates are never applied automatically**. Run `ai-sync update` explicitly to apply them.
+Checks for and applies tool updates. ai-sync also checks automatically once every 24 hours on startup (disable with `--no-update-check`).
 
 ```bash
 ai-sync update
@@ -287,10 +305,66 @@ The convention is `<name>.<envId>.md` for environment-specific skills, or `<name
 ### Global options
 
 ```bash
-ai-sync --no-update-check <command>   # suppress the startup update notification
+ai-sync --no-update-check <command>   # skip the auto-update check
 ai-sync --version                      # show version
 ai-sync --help                         # show help
 ```
+
+## AI-assisted merge
+
+When `ai-sync pull` finds that the same file was modified locally and remotely,
+it can ask a local AI CLI (`claude`, `codex`, or `opencode`) to produce a
+3-way merge instead of dropping back to keep-local. The feature is
+**enabled by default**.
+
+By default, merges are staged under `<syncRepoDir>/.ai-sync/pending/<env>/<path>`
+so you can review them with `ai-sync resolve` before applying. Set
+`autoApply: true` (or pass `ai-sync pull --auto-apply`) to skip staging.
+
+### Configuration: `tools/merge-config.json`
+
+Drop a `tools/merge-config.json` at the root of your sync repo to tune the
+behavior. All fields are optional.
+
+```jsonc
+{
+  "enabled": true,            // master switch — set to false to disable AI merge
+  "resolver": "claude",       // "claude" | "codex" | "opencode"
+  "autoApply": false,         // false = stage under .ai-sync/pending/, true = write through
+  "timeoutSeconds": 60,       // per-file resolver timeout
+  "perType": {
+    "*.md":   "ai-freeform",
+    "*.json": "ai-validated",
+    "*.yaml": "ai-validated",
+    "*.yml":  "ai-validated",
+    "*.lock": "keep-local",
+    "*":      "keep-local"
+  }
+}
+```
+
+To disable AI-merge entirely, write:
+
+```jsonc
+{ "enabled": false }
+```
+
+See [`docs/merge-config.md`](docs/merge-config.md) for the full schema reference.
+
+### Reviewing pending merges
+
+```bash
+ai-sync resolve list                # show pending merges
+ai-sync resolve diff <path>         # diff the staged merge against the live file
+ai-sync resolve accept <path>       # apply one staged merge
+ai-sync resolve accept --all        # apply all pending merges
+ai-sync resolve reject <path>       # discard one staged merge
+ai-sync resolve reject --all        # discard all pending merges
+```
+
+`ai-sync status --verbose` also lists pending merges, and
+`ai-sync status --summarize` asks the configured resolver for a natural-language
+description of what differs between local, remote, and base.
 
 ## Environments
 
@@ -394,24 +468,6 @@ These are session data, caches, and logs that regenerate automatically and would
 
 You never see the tokens — they exist only in the git repo.
 
-## Security
-
-### Update model
-
-ai-sync **never applies updates without explicit user action.** The startup check (every 24 hours) only prints a notification — no code is downloaded or executed. Run `ai-sync update` when you choose to apply an update.
-
-### Version pinning
-
-The installer (`install.sh`) clones a specific pinned release tag (`PINNED_VERSION`) rather than the `main` branch. This means only explicitly tagged releases reach users, not every commit merged to `main`. The pinned version is updated as part of each release.
-
-### SSH host key verification
-
-`ai-sync bootstrap` uses standard SSH host key checking (`StrictHostKeyChecking=yes`). If you connect to a host for the first time, SSH will prompt you to verify the fingerprint — do not accept keys you cannot verify.
-
-### Allowlist-based sync
-
-Only files in the explicit allowlist are ever read or written. Credentials, session data, caches, and history are structurally excluded — they are not filtered by name matching but are simply never in scope.
-
 ## Safety
 
 - **Backup before pull/bootstrap:** Current config state is saved to a timestamped directory in `~/.ai-sync-backups/` before any destructive operation
@@ -490,7 +546,8 @@ src/
 │   ├── environment.ts        # Environment definitions (Claude, OpenCode)
 │   ├── env-config.ts         # Per-machine environment preferences
 │   ├── env-helpers.ts        # Shared helpers (allowlist, path rewrite checks)
-│   └── migration.ts          # v1→v2 repo migration
+│   ├── migration.ts          # v1→v2 repo migration
+│   └── merge/                # AI-assisted 3-way merge (adapters, strategies, staging)
 ├── git/
 │   └── repo.ts               # Git operations wrapper (simple-git)
 ├── platform/

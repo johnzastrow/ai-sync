@@ -59,6 +59,27 @@ function normaliseForAllowlist(relativePath: string): string | null {
 }
 
 /**
+ * Repo-level sync targets that live outside any environment subdirectory.
+ * These paths are relative to the sync repo root, not to any env subdirectory.
+ */
+export const REPO_LEVEL_SYNC_TARGETS: readonly string[] = [
+	"shared/", // All shared fragments
+	"tools/", // Tool manifest directory
+] as const;
+
+/**
+ * Checks whether a repo-root-relative path is in the repo-level sync targets.
+ * Used for paths like "shared/standards/tdd.md" and "tools/manifest.json".
+ */
+export function isRepoLevelPathAllowed(relativePath: string): boolean {
+	for (const target of REPO_LEVEL_SYNC_TARGETS) {
+		if (target.endsWith("/") && relativePath.startsWith(target)) return true;
+		if (relativePath === target) return true;
+	}
+	return false;
+}
+
+/**
  * Checks whether a relative path is allowed by the sync manifest.
  *
  * Allowlist behavior: only known paths are included, everything else is rejected.

@@ -4,8 +4,7 @@ set -euo pipefail
 # ai-sync online installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/berlinguyinca/ai-sync/main/install.sh | bash
 
-REPO="johnzastrow/ai-sync"
-PINNED_VERSION="v0.2.3"   # Updated on each release — pinned to avoid pulling unreviewed main
+REPO="berlinguyinca/ai-sync"
 INSTALL_DIR="${AI_SYNC_INSTALL_DIR:-${CLAUDE_SYNC_INSTALL_DIR:-$HOME/.ai-sync-cli}}"
 SYNC_DIR="$HOME/.ai-sync"
 BIN_LINK="/usr/local/bin/ai-sync"
@@ -16,21 +15,66 @@ ok()    { printf '\033[1;32m%s\033[0m\n' "$*"; }
 warn()  { printf '\033[1;33m%s\033[0m\n' "$*"; }
 err()   { printf '\033[1;31mError: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# Offer to star the repo on GitHub
+ask_star() {
+  echo ""
+  printf '\033[1;33m\u2B50 Enjoying ai-sync? Star us on GitHub to help others discover it!\033[0m\n'
+  printf '   \033[4mhttps://github.com/%s\033[0m\n' "$REPO"
+  echo ""
+  local answer
+  answer=$(prompt "Open in browser? (y/n)" "y")
+  if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+    if command -v open >/dev/null 2>&1; then
+      open "https://github.com/$REPO"
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "https://github.com/$REPO"
+    elif command -v wslview >/dev/null 2>&1; then
+      wslview "https://github.com/$REPO"
+    else
+      echo "  Visit: https://github.com/$REPO"
+    fi
+  fi
+}
+
 # Read user input — works even when script is piped via curl | bash
 # Returns the value via stdout; caller captures with $()
+# Honors AI_SYNC_NONINTERACTIVE=1 and AI_SYNC_ENV / AI_SYNC_REPO_NAME / AI_SYNC_REPO_VISIBILITY overrides
 prompt() {
   local msg="$1" default="$2" reply=""
-  if [ ! -e /dev/tty ]; then
-    # No tty available (headless/Docker) — use default silently
+
+  # Non-interactive mode: always use default
+  if [ "${AI_SYNC_NONINTERACTIVE:-0}" = "1" ]; then
     echo "$default"
     return
   fi
-  if [ -n "$default" ]; then
-    printf '%s [%s]: ' "$msg" "$default" >/dev/tty
+
+  # Try /dev/tty first (POSIX), then fall back to stdin if it's a TTY (Git Bash on Windows
+  # has /dev/tty but reads from it can hang). If neither works, use the default.
+  local input_src=""
+  if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    input_src="/dev/tty"
+  elif [ -t 0 ]; then
+    input_src="/dev/stdin"
   else
-    printf '%s: ' "$msg" >/dev/tty
+    # No interactive input available — use default silently
+    echo "$default"
+    return
   fi
-  read -r reply </dev/tty || true
+
+  if [ -n "$default" ]; then
+    printf '%s [%s]: ' "$msg" "$default" > /dev/stderr
+  else
+    printf '%s: ' "$msg" > /dev/stderr
+  fi
+
+  # Use read with a timeout fallback on systems where /dev/tty is broken (e.g. some Git Bash setups).
+  # AI_SYNC_PROMPT_TIMEOUT (seconds) — defaults to no timeout for normal interactive sessions.
+  if [ -n "${AI_SYNC_PROMPT_TIMEOUT:-}" ]; then
+    read -r -t "$AI_SYNC_PROMPT_TIMEOUT" reply < "$input_src" || reply=""
+  else
+    read -r reply < "$input_src" || reply=""
+  fi
+
   if [ -z "$reply" ]; then
     echo "$default"
   else
@@ -231,19 +275,16 @@ ok "Node.js $(node -v | tr -d v) found"
 # ── install ────────────────────────────────────────────────────────
 
 if [ -d "$INSTALL_DIR/.git" ]; then
-  info "Updating existing installation in $INSTALL_DIR to $PINNED_VERSION..."
-  git -C "$INSTALL_DIR" fetch --depth 1 origin "refs/tags/$PINNED_VERSION"
-  git -C "$INSTALL_DIR" reset --hard FETCH_HEAD
+  info "Updating existing installation in $INSTALL_DIR..."
+  git -C "$INSTALL_DIR" fetch --depth 1 origin main
+  git -C "$INSTALL_DIR" reset --hard origin/main
 else
-  info "Cloning ai-sync $PINNED_VERSION into $INSTALL_DIR..."
-  git clone --depth 1 --branch "$PINNED_VERSION" "https://github.com/$REPO.git" "$INSTALL_DIR"
+  info "Cloning ai-sync into $INSTALL_DIR..."
+  git clone --depth 1 "https://github.com/$REPO.git" "$INSTALL_DIR"
 fi
 
 info "Installing dependencies..."
 (cd "$INSTALL_DIR" && npm install --no-fund --no-audit --loglevel=error)
-
-info "Updating package.json version to $PINNED_VERSION..."
-sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${PINNED_VERSION#v}\"/" "$INSTALL_DIR/package.json" 2>/dev/null || true
 
 info "Building..."
 (cd "$INSTALL_DIR" && npm run build --silent)
@@ -283,16 +324,24 @@ AI_SYNC="node $INSTALL_DIR/dist/cli.js"
 info "Which environments do you want to sync?"
 echo "  1) Claude Code only (default)"
 echo "  2) OpenCode only"
-echo "  3) Both Claude Code and OpenCode"
+echo "  3) Codex only"
+echo "  4) Antigravity only"
+echo "  5) Auto-detect all installed tools"
+echo "  6) Claude Code + OpenCode"
 ENV_CHOICE=$(prompt "Choose" "1")
 
 case "$ENV_CHOICE" in
   1) echo '["claude"]' > "$INSTALL_DIR/.environments.json" ;;
   2) echo '["opencode"]' > "$INSTALL_DIR/.environments.json" ;;
-  3) echo '["claude","opencode"]' > "$INSTALL_DIR/.environments.json" ;;
+  3) echo '["codex"]' > "$INSTALL_DIR/.environments.json" ;;
+  4) echo '["antigravity"]' > "$INSTALL_DIR/.environments.json" ;;
+  5) rm -f "$INSTALL_DIR/.environments.json" ;;
+  6) echo '["claude","opencode"]' > "$INSTALL_DIR/.environments.json" ;;
   *) warn "Invalid choice '$ENV_CHOICE', using Claude Code only"
      echo '["claude"]' > "$INSTALL_DIR/.environments.json" ;;
 esac
+echo ""
+info "You can change this later with: ai-sync env enable <claude|codex|opencode|antigravity>"
 
 # Install slash commands (e.g., /sync)
 info "Installing slash command skills..."
@@ -307,7 +356,7 @@ if [ -d "$SYNC_DIR/.git" ]; then
   echo "  ai-sync push    # push local changes"
   echo "  ai-sync pull    # pull remote changes"
   echo "  ai-sync status  # check sync state"
-  echo ""
+  ask_star
   exit 0
 fi
 
@@ -411,4 +460,5 @@ ok "All done! Your config is synced to $REMOTE_URL"
 echo ""
 echo "On other machines, run:"
 echo "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
+ask_star
 echo ""
