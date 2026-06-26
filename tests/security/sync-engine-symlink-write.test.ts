@@ -29,7 +29,9 @@ describe.skipIf(!canCreateSymlinks)("sync-engine pull: arbitrary-write defense (
 		// Initialize the sync repo as a real git repo with a remote so syncPull
 		// passes its hasRemote() guard. The remote points at itself; we will
 		// pre-populate working-tree files and let syncPull pick them up.
-		execSync("git init -q", { cwd: syncRepoDir });
+		// -b main: runners that still default to "master" would otherwise make
+		// syncPull's `git pull origin main` fail with "couldn't find remote ref main".
+		execSync("git init -q -b main", { cwd: syncRepoDir });
 		execSync("git -c user.email=x@y -c user.name=x commit -q --allow-empty -m init", {
 			cwd: syncRepoDir,
 		});
