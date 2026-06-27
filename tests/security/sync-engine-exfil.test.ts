@@ -27,7 +27,9 @@ describe.skipIf(!canCreateSymlinks)("sync-engine push: exfiltration defense (CRI
 		await fs.mkdir(syncRepoDir, { recursive: true });
 		await fs.mkdir(outsideDir, { recursive: true });
 
-		execSync("git init -q", { cwd: syncRepoDir });
+		// -b main: runners that still default to "master" would otherwise make
+		// syncPull's `git pull origin main` fail with "couldn't find remote ref main".
+		execSync("git init -q -b main", { cwd: syncRepoDir });
 		execSync("git -c user.email=x@y -c user.name=x commit -q --allow-empty -m init", {
 			cwd: syncRepoDir,
 		});

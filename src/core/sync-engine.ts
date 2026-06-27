@@ -69,6 +69,29 @@ async function ensureRealRoot(root: string): Promise<string> {
 }
 
 /**
+ * Reads a destination file's content for 3-way merge comparison, treating a
+ * symlink as if the file were absent (returns null).
+ *
+ * A symlink at an allowlisted destination is never trusted local state: a plain
+ * `readFile` follows it, so an attacker who plants a symlink there could make
+ * their outside file masquerade as the local config and skew merge decisions
+ * (CRIT-2). Returning null routes the caller into the "apply remote" branch,
+ * which replaces the symlink with a regular file via {@link safeWriteInside}.
+ */
+async function readLocalForMerge(destPath: string): Promise<string | null> {
+	try {
+		const lst = await fs.lstat(destPath);
+		if (lst.isSymbolicLink()) {
+			return null;
+		}
+		return await fs.readFile(destPath, "utf-8");
+	} catch {
+		// Doesn't exist locally
+		return null;
+	}
+}
+
+/**
  * Result of a syncPush operation.
  */
 export interface SyncPushResult {
@@ -599,13 +622,8 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 						remoteContent = expandPathsForLocal(remoteContent, homeDir);
 					}
 
-					// Read local file content
-					let localContent: string | null = null;
-					try {
-						localContent = await fs.readFile(destPath, "utf-8");
-					} catch {
-						// File doesn't exist locally
-					}
+					// Read local file content (a symlink here is untrusted — see readLocalForMerge)
+					const localContent = await readLocalForMerge(destPath);
 
 					// Get pre-pull base content (expanded for comparison)
 					const rawBase = prePull.get(relativePath);
@@ -835,13 +853,8 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 				remoteContent = expandPathsForLocal(remoteContent, homeDir);
 			}
 
-			// Read local file
-			let localContent: string | null = null;
-			try {
-				localContent = await fs.readFile(destPath, "utf-8");
-			} catch {
-				// Doesn't exist locally
-			}
+			// Read local file (a symlink here is untrusted — see readLocalForMerge)
+			const localContent = await readLocalForMerge(destPath);
 
 			// Get pre-pull base (expanded for comparison)
 			const rawBase = v1PrePull.get(relativePath);

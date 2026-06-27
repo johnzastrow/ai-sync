@@ -74,3 +74,9 @@ Phases execute in numeric order: 1 -> 2 -> 3
 | 1. Foundation | 2/2 | Complete | 2026-03-08 |
 | 2. Sync Operations | 2/2 | Complete | 2026-03-08 |
 | 3. Cross-Platform and Bootstrap | 1/2 | In progress | - |
+
+## Backlog (unscheduled)
+
+Ideas not yet committed to a phase.
+
+- [ ] **Ship a compiled single-file binary via `bun build --compile`** — The current Node/TypeScript deployment story is awkward: users need a Node 22+ runtime and a global npm install. Compiling the existing codebase into a standalone executable with Bun (no rewrite) would let us distribute one self-contained binary per platform. Chosen over a Rust/Go rewrite because ai-sync is I/O/git-bound (no perf win from a compiled language) and already has 480+ passing tests worth preserving. Scope: add a `bun build --compile` step (and/or Node SEA as a fallback), produce per-platform binaries in CI/release, and update install docs.
