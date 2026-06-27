@@ -226,6 +226,32 @@ describe("core/updater", () => {
 			expect(result).toContain("bbbbbbb");
 		});
 
+		it("SECURITY: never auto-executes remote code on startup (regression guard)", async () => {
+			// startupUpdateCheck runs on EVERY CLI invocation. A previous version
+			// auto-ran `git reset --hard` + `npm install` + `npm run build` when the
+			// remote was ahead — i.e. it executed unreviewed remote code on every
+			// run (a recurring revert during upstream merges). This test fails CI if
+			// that behaviour is ever re-introduced.
+			const checkFile = path.join(tmpDir, ".last-update-check");
+			fs.writeFileSync(checkFile, String(Date.now() - 25 * 60 * 60 * 1000));
+
+			// Remote ahead — the exact condition under which the old code auto-ran.
+			mockedExecSync.mockImplementationOnce(() => Buffer.from("")); // git fetch
+			mockedExecSync.mockImplementationOnce(() => "aaaaaaa1234567890ab\n"); // local HEAD
+			mockedExecSync.mockImplementationOnce(() => "bbbbbbb9876543210cd\n"); // remote (ahead)
+
+			await startupUpdateCheck();
+
+			const commands = mockedExecSync.mock.calls.map((c) => String(c[0]));
+			for (const cmd of commands) {
+				expect(cmd).not.toMatch(/reset\s+--hard/);
+				expect(cmd).not.toMatch(/npm\s+(install|ci)\b/);
+				expect(cmd).not.toMatch(/npm\s+run\s+build/);
+			}
+			// Positive assertion: the startup check is read-only git (fetch + rev-parse).
+			expect(commands.every((c) => /git\s+(fetch|rev-parse)/.test(c))).toBe(true);
+		});
+
 		it("returns null on error (silent failure)", async () => {
 			// Stale check timestamp so it proceeds
 			const checkFile = path.join(tmpDir, ".last-update-check");
