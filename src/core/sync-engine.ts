@@ -13,10 +13,18 @@ import {
 import { createBackup } from "./backup.js";
 import { makeAllowlistFn, needsPathRewrite } from "./env-helpers.js";
 import type { Environment } from "./environment.js";
-import { detectRepoVersion } from "./migration.js";
+import { createAdapter } from "./merge/adapters/index.js";
+import { defaultMergeConfig, loadMergeConfig, type MergeConfig } from "./merge/config.js";
+import { tryAiMerge } from "./merge/index.js";
+import type { MergeResolver } from "./merge/resolver.js";
+import type { StagedEntry } from "./merge/staging.js";
+import { detectRepoVersion, migrateToV3 } from "./migration.js";
 import { expandPathsForLocal, rewritePathsForRepo } from "./path-rewriter.js";
+import type { ProvisionResult } from "./provisioner.js";
+import { discoverTools, preflightCheck, provision, writeManifest } from "./provisioner.js";
 import { safeWriteInside } from "./safe-fs.js";
 import { scanDirectory } from "./scanner.js";
+import { ToolManifestSchema } from "./tool-manifest.js";
 
 /**
  * Options for sync operations.
@@ -35,6 +43,10 @@ export interface SyncOptions {
 	verbose?: boolean;
 	/** Force overwrite of locally modified files during pull. */
 	force?: boolean;
+	/** Skip tool discovery during push. */
+	skipDiscovery?: boolean;
+	/** Skip tool provisioning during pull. */
+	noProvision?: boolean;
 }
 
 /**
@@ -104,14 +116,23 @@ export interface SyncPullResult {
 	fileChanges: FileChange[];
 	/** Files skipped because both local and remote had changes (merge conflict). */
 	conflicts?: FileChange[];
+	/** Conflict resolutions staged for review under <syncRepo>/.ai-sync/pending/. */
+	staged?: StagedEntry[];
 	perEnvironment?: Record<
 		string,
-		{ filesApplied: number; fileChanges: FileChange[]; conflicts?: FileChange[] }
+		{
+			filesApplied: number;
+			fileChanges: FileChange[];
+			conflicts?: FileChange[];
+			staged?: StagedEntry[];
+		}
 	>;
 	/** Errors encountered per environment (non-fatal). */
 	errors?: Record<string, string>;
 	/** True when --dry-run was used. */
 	dryRun?: boolean;
+	/** Result of tool provisioning, if manifest was found during pull. */
+	provisioning?: ProvisionResult;
 }
 
 /**
@@ -158,6 +179,26 @@ function resolveLegacyPaths(options: SyncOptions): {
  */
 function getRepoSubdir(syncRepoDir: string, envId: string, version: 1 | 2): string {
 	return version === 1 ? syncRepoDir : path.join(syncRepoDir, envId);
+}
+
+/**
+ * Collects shared fragment file paths from the sync repo.
+ * shared/ lives ONLY in the sync repo, not in any config dir.
+ */
+async function syncSharedDirectory(syncRepoDir: string): Promise<string[]> {
+	const sharedDir = path.join(syncRepoDir, "shared");
+	const changedFiles: string[] = [];
+	try {
+		await fs.access(sharedDir);
+	} catch {
+		return changedFiles; // shared/ doesn't exist yet
+	}
+	// Use scanDirectory from scanner.ts to get all files under shared/
+	const sharedFiles = await scanDirectory(sharedDir);
+	for (const relativePath of sharedFiles) {
+		changedFiles.push(`shared/${relativePath}`);
+	}
+	return changedFiles;
 }
 
 /**
@@ -360,7 +401,54 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 
 	// Stage, commit, push
 	verboseLog(options, `Staging ${fileChanges.length} file(s)...`);
-	await addFiles(syncRepoDir, ["."]);
+	const sharedFiles = await syncSharedDirectory(syncRepoDir);
+	const filesToStage = [...new Set([...status.files.map((f) => f.path), ...sharedFiles])];
+
+	// Tool discovery (non-fatal)
+	if (!options.skipDiscovery) {
+		try {
+			const enabledEnvs = options.environments ?? [];
+			const claudeEnv = enabledEnvs.find((e) => e.id === "claude");
+			if (claudeEnv) {
+				const settingsPath = path.join(claudeEnv.getConfigDir(), "settings.json");
+				const pluginsPath = path.join(
+					claudeEnv.getConfigDir(),
+					"plugins",
+					"installed_plugins.json",
+				);
+				const tools = await discoverTools({ settingsPath, pluginsPath });
+				if (tools.length > 0) {
+					const manifest = {
+						version: 1 as const,
+						discoveredAt: new Date().toISOString(),
+						sourcePlatform: process.platform as "darwin" | "linux" | "win32",
+						tools,
+						autoInstall: false,
+					};
+					await writeManifest(manifest, syncRepoDir);
+					filesToStage.push("tools/manifest.json");
+				}
+			}
+		} catch (err) {
+			// Discovery errors are non-fatal — log and continue
+			if (options.verbose) {
+				console.warn("Tool discovery warning:", err);
+			}
+		}
+	}
+
+	// Auto-upgrade to v3 when fragments or tools are present
+	const repoVersion = await detectRepoVersion(syncRepoDir);
+	const hasFragments = sharedFiles.length > 0;
+	const hasTools = filesToStage.includes("tools/manifest.json");
+	if (repoVersion === 2 && (hasFragments || hasTools)) {
+		await migrateToV3(syncRepoDir);
+		filesToStage.push(".sync-version");
+	}
+
+	if (filesToStage.length > 0) {
+		await addFiles(syncRepoDir, filesToStage);
+	}
 	verboseLog(options, "Committing...");
 	await commitFiles(syncRepoDir, "sync: update config");
 	verboseLog(options, "Pushing to remote...");
@@ -396,12 +484,39 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 	verboseLog(options, `Repo version: v${version}`);
 	const allFileChanges: FileChange[] = [];
 	const allConflicts: FileChange[] = [];
+	const allStaged: StagedEntry[] = [];
 	let backupDir = "";
 	let totalApplied = 0;
 	const perEnvironment: Record<
 		string,
-		{ filesApplied: number; fileChanges: FileChange[]; conflicts?: FileChange[] }
+		{
+			filesApplied: number;
+			fileChanges: FileChange[];
+			conflicts?: FileChange[];
+			staged?: StagedEntry[];
+		}
 	> = {};
+
+	// Load merge config + resolver lazily — defaults disable AI merge.
+	let mergeConfig: MergeConfig;
+	try {
+		mergeConfig = await loadMergeConfig(syncRepoDir);
+	} catch (err) {
+		verboseLog(
+			options,
+			`Invalid tools/merge-config.json — disabling AI merge: ${(err as Error).message}`,
+		);
+		mergeConfig = defaultMergeConfig();
+	}
+	let mergeResolver: MergeResolver | undefined;
+	if (mergeConfig.enabled) {
+		try {
+			mergeResolver = createAdapter(mergeConfig.resolver);
+		} catch (err) {
+			verboseLog(options, `Failed to construct adapter: ${(err as Error).message}`);
+			mergeConfig = { ...mergeConfig, enabled: false };
+		}
+	}
 	const errors: Record<string, string> = {};
 	const envs = options.filterEnv
 		? (options.environments ?? []).filter((e) => e.id === options.filterEnv)
@@ -475,6 +590,7 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 				const allowlistFn = makeAllowlistFn(env);
 				const envChanges: FileChange[] = [];
 				const envConflicts: FileChange[] = [];
+				const envStaged: StagedEntry[] = [];
 				const prePull = prePullContents.get(env.id) ?? new Map<string, string>();
 
 				let repoFiles: string[] = [];
@@ -569,13 +685,54 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 								type: "modified",
 							});
 						} else {
-							// Both changed — conflict, keep local version
-							verboseLog(options, `Conflict (keeping local): ${relativePath}`);
-							envConflicts.push({ path: relativePath, type: "modified" });
-							allConflicts.push({
-								path: `${env.id}/${relativePath}`,
-								type: "modified",
-							});
+							// Both changed — conflict. Try AI-assisted merge if enabled;
+							// otherwise (or on any resolver failure) fall back to keep-local.
+							let aiHandled = false;
+							if (mergeConfig.enabled && mergeResolver) {
+								const merge = await tryAiMerge(
+									{
+										relativePath,
+										envName: env.id,
+										base: baseContent,
+										local: localContent,
+										remote: remoteContent,
+									},
+									{
+										config: mergeConfig,
+										resolver: mergeResolver,
+										syncRepoDir,
+										warn: (m) => verboseLog(options, m),
+									},
+								);
+								if (merge.kind === "staged") {
+									envStaged.push(merge.entry);
+									allStaged.push(merge.entry);
+									aiHandled = true;
+								} else if (merge.kind === "applied") {
+									// Route the AI-merged content through the same boundary
+									// containment guard (safeWriteInside) as every other write
+									// in this op, rather than an unchecked write.
+									if (!options.dryRun && configDirReal) {
+										await safeWriteInside(configDirReal, relativePath, merge.mergedContent, {
+											preserveModeFromSrc: srcPath,
+										});
+									}
+									envChanges.push({ path: relativePath, type: "modified" });
+									allFileChanges.push({
+										path: `${env.id}/${relativePath}`,
+										type: "modified",
+									});
+									aiHandled = true;
+								}
+							}
+							if (!aiHandled) {
+								verboseLog(options, `Conflict (keeping local): ${relativePath}`);
+								envConflicts.push({ path: relativePath, type: "modified" });
+								allConflicts.push({
+									path: `${env.id}/${relativePath}`,
+									type: "modified",
+								});
+							}
 						}
 					}
 				}
@@ -638,6 +795,7 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 					filesApplied: repoFiles.length,
 					fileChanges: envChanges,
 					conflicts: envConflicts.length > 0 ? envConflicts : undefined,
+					staged: envStaged.length > 0 ? envStaged : undefined,
 				};
 			} catch (err) {
 				errors[env.id] = err instanceof Error ? err.message : String(err);
@@ -779,6 +937,44 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 			? ` (${allConflicts.length} conflict(s) — local changes preserved, push first then pull)`
 			: "";
 
+	// Tool provisioning (non-fatal, skipped on dry-run and when noProvision is set)
+	let provisioningResult: ProvisionResult | undefined;
+	if (!options.noProvision && !options.dryRun) {
+		const manifestPath = path.join(syncRepoDir, "tools", "manifest.json");
+		try {
+			const manifestContent = await fs.readFile(manifestPath, "utf-8");
+			const manifest = ToolManifestSchema.parse(JSON.parse(manifestContent));
+			if (manifest.tools.length > 0) {
+				const preflight = await preflightCheck(manifest);
+				if (!preflight.ok) {
+					provisioningResult = {
+						installed: [],
+						skipped: [],
+						failed: [],
+						commands: [],
+						rolledBack: true,
+						rollbackPartial: false,
+					};
+				} else {
+					provisioningResult = await provision({
+						manifest,
+						autoInstall: manifest.autoInstall,
+						backupDir: backupDir || "",
+					});
+				}
+			}
+		} catch (provErr) {
+			// No manifest or invalid — log in verbose mode
+			if (options.verbose) {
+				console.warn(
+					pc.yellow(
+						`  [verbose] Provisioning skipped: ${provErr instanceof Error ? provErr.message : String(provErr)}`,
+					),
+				);
+			}
+		}
+	}
+
 	return {
 		backupDir,
 		filesApplied: totalApplied,
@@ -787,9 +983,11 @@ export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 			: `Applied ${totalApplied} files from remote. Backup at: ${backupDir}${conflictSuffix}`,
 		fileChanges: allFileChanges,
 		conflicts: allConflicts.length > 0 ? allConflicts : undefined,
+		staged: allStaged.length > 0 ? allStaged : undefined,
 		perEnvironment: Object.keys(perEnvironment).length > 0 ? perEnvironment : undefined,
 		errors: hasErrors ? errors : undefined,
 		dryRun: options.dryRun,
+		provisioning: provisioningResult,
 	};
 }
 
@@ -974,6 +1172,10 @@ export async function syncStatus(options: SyncOptions): Promise<SyncStatusResult
 		}
 		totalSynced = localFiles.length;
 	}
+
+	// Include shared directory files in the status report
+	const sharedStatusFiles = await syncSharedDirectory(syncRepoDir);
+	totalSynced += sharedStatusFiles.length;
 
 	return {
 		localModifications: allModifications,

@@ -6,12 +6,14 @@ import pc from "picocolors";
 import { startupUpdateCheck } from "../core/updater.js";
 import { registerBootstrapCommand } from "./commands/bootstrap.js";
 import { registerEnvCommand } from "./commands/env.js";
+import { registerFragmentCommand } from "./commands/fragment.js";
 import { registerInitCommand } from "./commands/init.js";
 import { registerInstallSkillsCommand } from "./commands/install-skills.js";
 import { registerLinkCommand } from "./commands/link.js";
 import { registerMigrateCommand } from "./commands/migrate.js";
 import { registerPullCommand } from "./commands/pull.js";
 import { registerPushCommand } from "./commands/push.js";
+import { registerResolveCommand } from "./commands/resolve.js";
 import { registerStatusCommand } from "./commands/status.js";
 import { registerUpdateCommand } from "./commands/update.js";
 
@@ -54,8 +56,8 @@ program
 			"  ai-sync link                  Symlink config to sync repo (single source of truth)\n" +
 			"  ai-sync unlink                Revert symlinks back to regular files\n" +
 			"  ai-sync migrate               Migrate v1 repo to v2 multi-env format\n\n" +
-			"Update check: ai-sync notifies you of available updates once every 24 hours.\n" +
-			"Run 'ai-sync update' to apply. Disable notifications with --no-update-check.",
+			"Auto-update: ai-sync checks for updates once every 24 hours.\n" +
+			"Disable with --no-update-check.",
 	)
 	.version(getVersion())
 	.option("--no-update-check", "Skip automatic update check on startup");
@@ -70,6 +72,8 @@ registerInstallSkillsCommand(program);
 registerEnvCommand(program);
 registerLinkCommand(program);
 registerMigrateCommand(program);
+registerFragmentCommand(program);
+registerResolveCommand(program);
 
 export { program };
 
