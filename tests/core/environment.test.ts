@@ -59,16 +59,15 @@ describe("environment", () => {
 			expect(claude.getPluginSyncPatterns()).toContain("plugins/installed_plugins.json");
 		});
 
-		it("has cache/ in plugin sync patterns", () => {
-			expect(claude.getPluginSyncPatterns()).toContain("plugins/cache/");
+		it("does NOT sync cache/ or data/ (machine-local)", () => {
+			expect(claude.getPluginSyncPatterns()).not.toContain("plugins/cache/");
+			expect(claude.getPluginSyncPatterns()).not.toContain("plugins/data/");
 		});
 
-		it("has data/ in plugin sync patterns", () => {
-			expect(claude.getPluginSyncPatterns()).toContain("plugins/data/");
-		});
-
-		it("has plugin ignore patterns", () => {
+		it("has plugin ignore patterns including cache/ and data/", () => {
 			expect(claude.getIgnorePatterns()).toContain("plugins/install-counts-cache.json");
+			expect(claude.getIgnorePatterns()).toContain("plugins/cache/");
+			expect(claude.getIgnorePatterns()).toContain("plugins/data/");
 		});
 
 		it("path rewrite targets include settings.json", () => {

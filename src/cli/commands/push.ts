@@ -17,6 +17,7 @@ export interface PushOptions {
 	env?: string;
 	verbose?: boolean;
 	skipDiscovery?: boolean;
+	skipBackup?: boolean;
 }
 
 /**
@@ -33,6 +34,7 @@ export async function handlePush(options: PushOptions): Promise<SyncPushResult> 
 		filterEnv: options.env,
 		verbose: options.verbose,
 		skipDiscovery: options.skipDiscovery,
+		skipBackup: options.skipBackup,
 	});
 }
 
@@ -62,6 +64,7 @@ export function registerPushCommand(program: Command): void {
 			"--report [file]",
 			"Write a markdown report of this sync to <file> (or an auto-named file)",
 		)
+		.option("--no-backup", "Skip the pre-push safety backup of the sync repo")
 		.action(
 			async (opts: {
 				repoPath?: string;
@@ -71,9 +74,10 @@ export function registerPushCommand(program: Command): void {
 				env?: string;
 				skipDiscovery: boolean;
 				report?: string | boolean;
+				backup: boolean;
 			}) => {
 				try {
-					const result = await handlePush(opts);
+					const result = await handlePush({ ...opts, skipBackup: !opts.backup });
 					if (result.errors) {
 						console.error(pc.red("Errors during push:"));
 						printErrors(result.errors);
@@ -104,6 +108,9 @@ export function registerPushCommand(program: Command): void {
 							perEnvironment: result.perEnvironment,
 						});
 						console.log(pc.dim(`Sync report written to: ${written}`));
+					}
+					if (!result.dryRun && result.backupDir) {
+						console.log(pc.dim(`Pre-push backup: ${result.backupDir}`));
 					}
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);

@@ -71,13 +71,13 @@ export class ClaudeEnvironment implements Environment, FragmentCapable {
 			"plugins/known_marketplaces.json",
 			"plugins/marketplaces/",
 			"plugins/installed_plugins.json",
-			"plugins/cache/",
-			"plugins/data/",
 		];
 	}
 
 	getIgnorePatterns(): readonly string[] {
-		return ["plugins/install-counts-cache.json"];
+		// plugins/cache/ and plugins/data/ are machine-local and reconstructable;
+		// excluding them keeps cross-machine sync to actual config. See manifest.ts.
+		return ["plugins/install-counts-cache.json", "plugins/cache/", "plugins/data/"];
 	}
 
 	getPathRewriteTargets(): string[] {

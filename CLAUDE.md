@@ -13,6 +13,19 @@ npm run format         # Biome format
 npm run typecheck      # tsc --noEmit
 ```
 
+## Development safety
+
+NEVER run a dev/unbuilt build against your real config. `push`/`pull` mutate the
+sync repo and config dir. When testing manually, always target throwaway dirs:
+
+```bash
+node dist/cli.js push --repo-path /tmp/test-repo --claude-dir /tmp/test-claude
+```
+
+Set `AI_SYNC_DEV=1` in your dev shell to enforce this: with it set, `push`/`pull`
+refuse to operate on the real default sync repo (`~/.ai-sync`) and require an
+explicit `--repo-path` to a throwaway directory. Tests already use temp dirs.
+
 ### CLI surface
 
 ```bash
