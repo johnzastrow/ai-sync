@@ -10,6 +10,7 @@ import {
 	pullFromRemote,
 	pushToRemote,
 } from "../git/repo.js";
+import { getSyncRepoDir } from "../platform/paths.js";
 import { createBackup } from "./backup.js";
 import { makeAllowlistFn, needsPathRewrite } from "./env-helpers.js";
 import type { Environment } from "./environment.js";
@@ -47,6 +48,8 @@ export interface SyncOptions {
 	skipDiscovery?: boolean;
 	/** Skip tool provisioning during pull. */
 	noProvision?: boolean;
+	/** Skip the pre-push safety backup of the sync repo (e.g. for frequent auto-push). */
+	skipBackup?: boolean;
 }
 
 /**
@@ -66,6 +69,24 @@ function verboseLog(options: SyncOptions, message: string): void {
 async function ensureRealRoot(root: string): Promise<string> {
 	await fs.mkdir(root, { recursive: true });
 	return fs.realpath(root);
+}
+
+/**
+ * Dev-mode safety guard. When `AI_SYNC_DEV` is set, refuse to operate on the
+ * real default sync repo, forcing development runs to target a throwaway dir
+ * via `--repo-path`. This is the cheapest way to prevent a dev/unbuilt checkout
+ * from mutating the user's actual config while testing.
+ */
+export function assertDevModeNotRealRepo(syncRepoDir: string, realSyncRepoDir: string): void {
+	if (!process.env.AI_SYNC_DEV) {
+		return;
+	}
+	if (path.resolve(syncRepoDir) === path.resolve(realSyncRepoDir)) {
+		throw new Error(
+			`AI_SYNC_DEV is set: refusing to operate on the real sync repo (${realSyncRepoDir}). ` +
+				"Pass --repo-path pointing at a throwaway directory for development.",
+		);
+	}
 }
 
 /**
@@ -104,6 +125,8 @@ export interface SyncPushResult {
 	errors?: Record<string, string>;
 	/** True when --dry-run was used. */
 	dryRun?: boolean;
+	/** Pre-push backup directory of the sync repo, when one was created. */
+	backupDir?: string;
 }
 
 /**
@@ -206,6 +229,7 @@ async function syncSharedDirectory(syncRepoDir: string): Promise<string[]> {
  */
 export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 	const { syncRepoDir } = options;
+	assertDevModeNotRealRepo(syncRepoDir, getSyncRepoDir());
 
 	// Check remote exists
 	verboseLog(options, "Checking remote configuration...");
@@ -227,6 +251,21 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 				"If you have local conflicts, resolve them in the sync repo at: " +
 				syncRepoDir,
 		);
+	}
+
+	// Safety net: snapshot the sync repo before we modify it, so a bad push is
+	// recoverable. Discarded below if the push is a no-op (so frequent auto-push
+	// doesn't accumulate backups). Skipped on dry-run (which reverts) and when the
+	// caller opts out via skipBackup.
+	const backupBaseDir = path.join(path.dirname(syncRepoDir), ".ai-sync-backups");
+	let backupDir: string | undefined;
+	if (!options.dryRun && !options.skipBackup) {
+		try {
+			backupDir = await createBackup(syncRepoDir, backupBaseDir, () => true);
+			verboseLog(options, `Pre-push backup: ${backupDir}`);
+		} catch {
+			// Sync repo not yet populated — nothing to back up.
+		}
 	}
 
 	verboseLog(options, "Detecting repo version...");
@@ -261,33 +300,33 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 				const localFiles = await scanDirectory(configDir, allowlistFn);
 				verboseLog(options, `Found ${localFiles.length} files for ${env.id}`);
 
-				if (!options.dryRun) {
-					// Copy each file from configDir to repoSubdir
-					const repoSubdirReal = await ensureRealRoot(repoSubdir);
-					for (const relativePath of localFiles) {
-						const srcPath = path.join(configDir, relativePath);
-						let content = await fs.readFile(srcPath, "utf-8");
-						if (needsPathRewrite(relativePath, env)) {
-							verboseLog(options, `Rewriting paths in ${relativePath}`);
-							content = rewritePathsForRepo(content, homeDir);
-						}
-						await safeWriteInside(repoSubdirReal, relativePath, content, {
-							preserveModeFromSrc: srcPath,
-						});
+				// Copy each file from configDir to repoSubdir. This runs in dry-run
+				// too, so the `git status` check below can detect the real changes;
+				// when dryRun is set the working tree is reverted afterward.
+				const repoSubdirReal = await ensureRealRoot(repoSubdir);
+				for (const relativePath of localFiles) {
+					const srcPath = path.join(configDir, relativePath);
+					let content = await fs.readFile(srcPath, "utf-8");
+					if (needsPathRewrite(relativePath, env)) {
+						verboseLog(options, `Rewriting paths in ${relativePath}`);
+						content = rewritePathsForRepo(content, homeDir);
 					}
+					await safeWriteInside(repoSubdirReal, relativePath, content, {
+						preserveModeFromSrc: srcPath,
+					});
+				}
 
-					// Delete files from repo subdir that no longer exist locally
-					try {
-						const repoFiles = await scanDirectory(repoSubdir, allowlistFn);
-						const localFileSet = new Set(localFiles);
-						for (const repoFile of repoFiles) {
-							if (!localFileSet.has(repoFile)) {
-								await fs.rm(path.join(repoSubdir, repoFile));
-							}
+				// Delete files from repo subdir that no longer exist locally
+				try {
+					const repoFiles = await scanDirectory(repoSubdir, allowlistFn);
+					const localFileSet = new Set(localFiles);
+					for (const repoFile of repoFiles) {
+						if (!localFileSet.has(repoFile)) {
+							await fs.rm(path.join(repoSubdir, repoFile));
 						}
-					} catch {
-						// Subdir might not exist yet
 					}
+				} catch {
+					// Subdir might not exist yet
 				}
 
 				perEnvironment[env.id] = { filesUpdated: 0, fileChanges: [] };
@@ -335,6 +374,12 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 	verboseLog(options, "Checking git status...");
 	const status = await getStatus(syncRepoDir);
 	if (status.isClean()) {
+		// No working-tree changes — discard the pre-push backup so no-op pushes
+		// (e.g. the hourly auto-push) don't accumulate snapshots.
+		if (backupDir) {
+			await fs.rm(backupDir, { recursive: true, force: true }).catch(() => {});
+			backupDir = undefined;
+		}
 		if (status.ahead > 0 && !options.dryRun) {
 			await pushToRemote(syncRepoDir);
 			return {
@@ -380,14 +425,20 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 	}
 
 	if (options.dryRun) {
-		// Revert working tree changes so dry-run is truly side-effect free.
-		// This only affects the managed sync repo (not user project files).
-		// Any manual edits in the sync repo will be reverted — this is acceptable
-		// because the sync repo is machine-managed and not meant for hand-editing.
+		// Revert working-tree changes so the dry-run is side-effect free. We revert
+		// tracked modifications, then remove ONLY the untracked files this dry-run
+		// created — files that were already untracked before the run (e.g. notes or
+		// audits the user left in the sync repo) are preserved. A blanket
+		// `git clean -f -d` here would delete those, which is real data loss.
 		const git = await import("simple-git").then((m) => m.simpleGit(syncRepoDir));
 		await git.checkout(["."]);
-		// Remove untracked files added during dry-run scan
-		await git.clean("f", ["-d"]);
+		const preExistingUntracked = new Set(preStatus.not_added);
+		const nowUntracked = (await git.status()).not_added;
+		for (const rel of nowUntracked) {
+			if (!preExistingUntracked.has(rel)) {
+				await fs.rm(path.join(syncRepoDir, rel), { force: true });
+			}
+		}
 		return {
 			filesUpdated: fileChanges.length,
 			pushed: false,
@@ -396,6 +447,7 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 			perEnvironment: Object.keys(perEnvironment).length > 0 ? perEnvironment : undefined,
 			errors: errorsResult,
 			dryRun: true,
+			backupDir,
 		};
 	}
 
@@ -461,6 +513,7 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
 		fileChanges,
 		perEnvironment: Object.keys(perEnvironment).length > 0 ? perEnvironment : undefined,
 		errors: errorsResult,
+		backupDir,
 	};
 }
 
@@ -469,6 +522,7 @@ export async function syncPush(options: SyncOptions): Promise<SyncPushResult> {
  */
 export async function syncPull(options: SyncOptions): Promise<SyncPullResult> {
 	const { syncRepoDir } = options;
+	assertDevModeNotRealRepo(syncRepoDir, getSyncRepoDir());
 
 	// Check remote exists
 	verboseLog(options, "Checking remote configuration...");

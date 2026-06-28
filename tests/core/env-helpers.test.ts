@@ -34,8 +34,11 @@ describe("makeAllowlistFn", () => {
 			expect(isAllowed("plugins/known_marketplaces.json")).toBe(true);
 			expect(isAllowed("plugins/installed_plugins.json")).toBe(true);
 			expect(isAllowed("plugins/marketplaces/custom.json")).toBe(true);
-			expect(isAllowed("plugins/cache/some-cache.json")).toBe(true);
-			expect(isAllowed("plugins/data/some-data.json")).toBe(true);
+		});
+
+		it("rejects machine-local plugin cache and data dirs", () => {
+			expect(isAllowed("plugins/cache/some-cache.json")).toBe(false);
+			expect(isAllowed("plugins/data/some-data.json")).toBe(false);
 		});
 
 		it("rejects ignored patterns even if they match plugin patterns", () => {

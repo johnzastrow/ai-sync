@@ -5,7 +5,12 @@ import { simpleGit } from "simple-git";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Environment } from "../../src/core/environment.js";
 import type { SyncOptions } from "../../src/core/sync-engine.js";
-import { syncPull, syncPush, syncStatus } from "../../src/core/sync-engine.js";
+import {
+	assertDevModeNotRealRepo,
+	syncPull,
+	syncPush,
+	syncStatus,
+} from "../../src/core/sync-engine.js";
 import { addFiles, addRemote, commitFiles, initRepo } from "../../src/git/repo.js";
 
 /**
@@ -955,6 +960,63 @@ describe("core/sync-engine", () => {
 		});
 	});
 
+	describe("syncPush — pre-push backup", () => {
+		it("creates a backup of the sync repo before a real push", async () => {
+			const { syncRepoDir, options } = await createTestEnv(tmpDir);
+
+			const result = await syncPush(options);
+
+			expect(result.pushed).toBe(true);
+			expect(result.backupDir).toBeDefined();
+			const backupBase = path.join(path.dirname(syncRepoDir), ".ai-sync-backups");
+			expect(result.backupDir?.startsWith(backupBase)).toBe(true);
+			expect((await fs.stat(result.backupDir as string)).isDirectory()).toBe(true);
+		});
+
+		it("skips the backup when skipBackup is set", async () => {
+			const { options } = await createTestEnv(tmpDir);
+
+			const result = await syncPush({ ...options, skipBackup: true });
+
+			expect(result.backupDir).toBeUndefined();
+		});
+
+		it("discards the backup when there are no changes to push", async () => {
+			const { options } = await createTestEnv(tmpDir);
+
+			await syncPush(options); // first push syncs everything
+			const result = await syncPush(options); // second push: nothing to do
+
+			expect(result.pushed).toBe(false);
+			expect(result.backupDir).toBeUndefined();
+		});
+	});
+
+	describe("assertDevModeNotRealRepo (dev guard)", () => {
+		const ORIGINAL = process.env.AI_SYNC_DEV;
+		afterEach(() => {
+			if (ORIGINAL === undefined) delete process.env.AI_SYNC_DEV;
+			else process.env.AI_SYNC_DEV = ORIGINAL;
+		});
+
+		it("is a no-op when AI_SYNC_DEV is unset", () => {
+			delete process.env.AI_SYNC_DEV;
+			expect(() => assertDevModeNotRealRepo("/home/u/.ai-sync", "/home/u/.ai-sync")).not.toThrow();
+		});
+
+		it("throws when AI_SYNC_DEV is set and the path is the real sync repo", () => {
+			process.env.AI_SYNC_DEV = "1";
+			expect(() => assertDevModeNotRealRepo("/home/u/.ai-sync", "/home/u/.ai-sync")).toThrow(
+				/refusing to operate on the real sync repo/i,
+			);
+		});
+
+		it("allows a throwaway path even in dev mode", () => {
+			process.env.AI_SYNC_DEV = "1";
+			expect(() => assertDevModeNotRealRepo("/tmp/sandbox-repo", "/home/u/.ai-sync")).not.toThrow();
+		});
+	});
+
 	describe("v2 multi-environment — syncPush", () => {
 		it("pushes files from multiple environments into subdirectories", async () => {
 			const { syncRepoDir, options } = await createV2TestEnv(tmpDir);
@@ -1067,7 +1129,7 @@ describe("core/sync-engine", () => {
 			expect(result.perEnvironment?.claude?.fileChanges.length).toBeGreaterThan(0);
 		});
 
-		it("dry-run in v2 does not push and sets dryRun flag", async () => {
+		it("dry-run in v2 reports the changes that would be pushed, without pushing", async () => {
 			const { options } = await createV2TestEnv(tmpDir);
 
 			const result = await syncPush({ ...options, dryRun: true });
@@ -1075,8 +1137,26 @@ describe("core/sync-engine", () => {
 			expect(result.dryRun).toBe(true);
 			expect(result.pushed).toBe(false);
 			expect(result.message).toContain("Dry run");
-			// In v2, dry-run skips file writing, so git status is clean and no file changes are detected
 			expect(result.perEnvironment).toBeDefined();
+			// Regression: v2 dry-run used to skip the file copy, so git status was
+			// always clean and it reported "no changes" even when there were changes.
+			// It must now detect the local config files not yet in the repo.
+			expect(result.fileChanges.length).toBeGreaterThan(0);
+		});
+
+		it("dry-run preserves pre-existing untracked files in the sync repo", async () => {
+			const { syncRepoDir, options } = await createV2TestEnv(tmpDir);
+
+			// Something the user left untracked in the sync repo (e.g. an audit note).
+			const note = path.join(syncRepoDir, "audits", "note.md");
+			await fs.mkdir(path.dirname(note), { recursive: true });
+			await fs.writeFile(note, "keep me");
+
+			await syncPush({ ...options, dryRun: true });
+
+			// Regression: the dry-run cleanup used `git clean -f -d`, which deleted
+			// pre-existing untracked files. It must leave them untouched.
+			expect(await fs.readFile(note, "utf-8")).toBe("keep me");
 		});
 
 		it("verbose in v2 logs environment processing messages", async () => {
@@ -1158,10 +1238,7 @@ describe("core/sync-engine", () => {
 			// settings.json should have expanded paths for the new home. Parse
 			// rather than substring-matching: JSON escapes `\` to `\\` on
 			// Windows so a raw newHomeDir substring never appears.
-			const settingsRaw = await fs.readFile(
-				path.join(newClaudeDir, "settings.json"),
-				"utf-8",
-			);
+			const settingsRaw = await fs.readFile(path.join(newClaudeDir, "settings.json"), "utf-8");
 			expect(settingsRaw).not.toContain("{{HOME}}");
 			const settings = JSON.parse(settingsRaw) as { projectDir?: string; [k: string]: unknown };
 			if (typeof settings.projectDir === "string") {
