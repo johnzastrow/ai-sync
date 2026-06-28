@@ -28,16 +28,22 @@ export const PLUGIN_SYNC_PATTERNS: readonly string[] = [
 	"plugins/known_marketplaces.json",
 	"plugins/marketplaces/",
 	"plugins/installed_plugins.json",
-	"plugins/cache/",
-	"plugins/data/",
 ] as const;
 
 /**
  * Plugin-specific paths to explicitly exclude from sync.
  * These take priority over PLUGIN_SYNC_PATTERNS.
+ *
+ * plugins/cache/ and plugins/data/ are deliberately NOT synced: they are
+ * machine-local, reconstructable plugin payloads plus churny bookkeeping
+ * (.in_use/.orphaned_at/.gcs-sha). Each machine rebuilds them from the synced
+ * declarations (installed_plugins.json, known_marketplaces.json, marketplaces/).
+ * Syncing them only adds cross-machine churn and bloat.
  */
 export const PLUGIN_IGNORE_PATTERNS: readonly string[] = [
 	"plugins/install-counts-cache.json",
+	"plugins/cache/",
+	"plugins/data/",
 ] as const;
 
 /**

@@ -33,8 +33,8 @@ describe("manifest", () => {
 	});
 
 	describe("PLUGIN_SYNC_PATTERNS", () => {
-		it("contains 6 plugin sync patterns", () => {
-			expect(PLUGIN_SYNC_PATTERNS).toHaveLength(6);
+		it("contains 4 plugin sync patterns", () => {
+			expect(PLUGIN_SYNC_PATTERNS).toHaveLength(4);
 		});
 
 		it("contains the expected plugin sync patterns", () => {
@@ -43,16 +43,24 @@ describe("manifest", () => {
 				"plugins/known_marketplaces.json",
 				"plugins/marketplaces/",
 				"plugins/installed_plugins.json",
-				"plugins/cache/",
-				"plugins/data/",
 			];
 			expect([...PLUGIN_SYNC_PATTERNS].sort()).toEqual([...expected].sort());
+		});
+
+		it("does NOT sync the machine-local plugin cache or data dirs", () => {
+			expect(PLUGIN_SYNC_PATTERNS).not.toContain("plugins/cache/");
+			expect(PLUGIN_SYNC_PATTERNS).not.toContain("plugins/data/");
 		});
 	});
 
 	describe("PLUGIN_IGNORE_PATTERNS", () => {
 		it("contains the plugin ignore pattern", () => {
 			expect(PLUGIN_IGNORE_PATTERNS).toContain("plugins/install-counts-cache.json");
+		});
+
+		it("ignores the machine-local plugin cache and data dirs", () => {
+			expect(PLUGIN_IGNORE_PATTERNS).toContain("plugins/cache/");
+			expect(PLUGIN_IGNORE_PATTERNS).toContain("plugins/data/");
 		});
 	});
 
@@ -89,10 +97,10 @@ describe("manifest", () => {
 			expect(isPathAllowed("plugins/installed_plugins.json")).toBe(true);
 		});
 
-		it("allows files under plugins/cache/ directory", () => {
+		it("rejects files under plugins/cache/ directory (machine-local, not synced)", () => {
 			expect(
 				isPathAllowed("plugins/cache/claude-plugins-official/superpowers/5.0.5/package.json"),
-			).toBe(true);
+			).toBe(false);
 		});
 
 		it("rejects files in projects/ directory", () => {
@@ -119,10 +127,10 @@ describe("manifest", () => {
 			expect(isPathAllowed("plugins/marketplaces/some-repo/file.md")).toBe(true);
 		});
 
-		it("allows files under plugins/data/ directory", () => {
-			expect(
-				isPathAllowed("plugins/data/superpowers-claude-plugins-official/state.json"),
-			).toBe(true);
+		it("rejects files under plugins/data/ directory (machine-local, not synced)", () => {
+			expect(isPathAllowed("plugins/data/superpowers-claude-plugins-official/state.json")).toBe(
+				false,
+			);
 		});
 
 		it("rejects unknown directories", () => {
