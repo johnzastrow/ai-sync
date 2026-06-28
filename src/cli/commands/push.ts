@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import pc from "picocolors";
 import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
+import { defaultReportPath, writeSyncReport } from "../../core/report.js";
 import type { SyncPushResult } from "../../core/sync-engine.js";
 import { syncPush } from "../../core/sync-engine.js";
 import { getClaudeDir, getSyncRepoDir } from "../../platform/paths.js";
@@ -59,6 +60,10 @@ export function registerPushCommand(program: Command): void {
 		.option("-n, --dry-run", "Show what would be pushed without making changes", false)
 		.option("--env <id>", "Only push a specific environment (e.g., claude or opencode)")
 		.option("--skip-discovery", "Skip tool discovery", false)
+		.option(
+			"--report [file]",
+			"Write a markdown report of this sync to <file> (or an auto-named file)",
+		)
 		.option("--no-backup", "Skip the pre-push safety backup of the sync repo")
 		.action(
 			async (opts: {
@@ -68,6 +73,7 @@ export function registerPushCommand(program: Command): void {
 				dryRun: boolean;
 				env?: string;
 				skipDiscovery: boolean;
+				report?: string | boolean;
 				backup: boolean;
 			}) => {
 				try {
@@ -88,6 +94,20 @@ export function registerPushCommand(program: Command): void {
 						console.log(pc.green(result.message));
 					} else {
 						console.log(pc.yellow("No changes to push -- already up to date"));
+					}
+					if (opts.report) {
+						const timestamp = new Date().toISOString();
+						const target =
+							typeof opts.report === "string" ? opts.report : defaultReportPath("push", timestamp);
+						const written = await writeSyncReport(target, {
+							command: "push",
+							timestamp,
+							syncRepoDir: opts.repoPath ?? getSyncRepoDir(),
+							dryRun: result.dryRun,
+							fileChanges: result.fileChanges,
+							perEnvironment: result.perEnvironment,
+						});
+						console.log(pc.dim(`Sync report written to: ${written}`));
 					}
 					if (!result.dryRun && result.backupDir) {
 						console.log(pc.dim(`Pre-push backup: ${result.backupDir}`));

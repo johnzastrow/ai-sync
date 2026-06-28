@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import pc from "picocolors";
 import { getEnabledEnvironmentInstances } from "../../core/env-config.js";
+import { defaultReportPath, writeSyncReport } from "../../core/report.js";
 import type { SyncPullResult } from "../../core/sync-engine.js";
 import { syncPull } from "../../core/sync-engine.js";
 import { getClaudeDir, getSyncRepoDir } from "../../platform/paths.js";
@@ -51,6 +52,10 @@ export function registerPullCommand(program: Command): void {
 		.option("-f, --force", "Overwrite locally modified files instead of preserving them", false)
 		.option("--env <id>", "Only pull a specific environment (e.g., claude or opencode)")
 		.option("--no-provision", "Skip tool provisioning")
+		.option(
+			"--report [file]",
+			"Write a markdown report of this sync to <file> (or an auto-named file)",
+		)
 		.action(
 			async (opts: {
 				repoPath?: string;
@@ -60,6 +65,7 @@ export function registerPullCommand(program: Command): void {
 				force: boolean;
 				env?: string;
 				provision: boolean;
+				report?: string | boolean;
 			}) => {
 				try {
 					const result = await handlePull({ ...opts, noProvision: !opts.provision });
@@ -103,27 +109,34 @@ export function registerPullCommand(program: Command): void {
 							}
 						}
 						if (p.installed.length > 0) {
-							console.log(
-								pc.green(`\nProvisioned ${p.installed.length} tool(s)`),
-							);
+							console.log(pc.green(`\nProvisioned ${p.installed.length} tool(s)`));
 						}
 						if (p.failed.length > 0) {
-							console.log(
-								pc.red(
-									`\n${p.failed.length} tool(s) failed to install`,
-								),
-							);
+							console.log(pc.red(`\n${p.failed.length} tool(s) failed to install`));
 						}
 						if (p.skipped.length > 0 && opts.verbose) {
-							console.log(
-								pc.dim(
-									`${p.skipped.length} tool(s) already installed`,
-								),
-							);
+							console.log(pc.dim(`${p.skipped.length} tool(s) already installed`));
 						}
 					}
 					if (!result.dryRun && result.backupDir) {
 						console.log(pc.dim(`Backup saved to: ${result.backupDir}`));
+					}
+					if (opts.report) {
+						const timestamp = new Date().toISOString();
+						const target =
+							typeof opts.report === "string" ? opts.report : defaultReportPath("pull", timestamp);
+						const written = await writeSyncReport(target, {
+							command: "pull",
+							timestamp,
+							syncRepoDir: opts.repoPath ?? getSyncRepoDir(),
+							dryRun: result.dryRun,
+							fileChanges: result.fileChanges,
+							perEnvironment: result.perEnvironment,
+							conflicts: result.conflicts,
+							staged: result.staged,
+							backupDir: result.backupDir,
+						});
+						console.log(pc.dim(`Sync report written to: ${written}`));
 					}
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
