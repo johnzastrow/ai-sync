@@ -207,7 +207,8 @@ ai-sync push -v               # show detailed file changes
 
 Fetches remote changes and applies them to local config directories. Always
 creates a timestamped backup first. On 3-way merge conflicts, ai-sync uses the
-[AI-assisted merge](#ai-assisted-merge) flow.
+[AI-assisted merge](#ai-assisted-merge) flow. For the full pull pipeline and how
+tool provisioning behaves, see [doc/pull-and-provisioning.md](doc/pull-and-provisioning.md).
 
 ```bash
 ai-sync pull
