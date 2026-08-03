@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	addFiles,
 	addRemote,
+	chunkPathsByLength,
 	commitFiles,
 	fetchRemote,
 	getRemotes,
@@ -68,6 +69,80 @@ describe("git/repo", () => {
 			const git = simpleGit(tmpDir);
 			const status = await git.status();
 			expect(status.staged).toContain(testFile);
+		});
+
+		it("stages a change set whose paths exceed the command-line limit", async () => {
+			await initRepo(tmpDir);
+
+			// Deeply-nested paths mirroring a real marketplace tree. 400 paths at
+			// ~150 chars each is ~60k characters -- roughly double the Windows
+			// CreateProcess cap of 32,767 that caused ENAMETOOLONG.
+			const nested = path.posix.join(
+				"plugins",
+				"marketplaces",
+				"some-marketplace-with-a-long-name.bak",
+				"plugins",
+				"a-plugin-with-a-fairly-long-directory-name",
+				"skills",
+				"a-skill-with-a-fairly-long-directory-name",
+			);
+			await fs.mkdir(path.join(tmpDir, nested), { recursive: true });
+
+			const files: string[] = [];
+			for (let i = 0; i < 400; i++) {
+				const rel = path.posix.join(nested, `reference-document-number-${i}.md`);
+				await fs.writeFile(path.join(tmpDir, rel), `content ${i}`);
+				files.push(rel);
+			}
+
+			const totalChars = files.reduce((sum, f) => sum + f.length, 0);
+			expect(totalChars).toBeGreaterThan(32_767);
+
+			await addFiles(tmpDir, files);
+
+			const status = await simpleGit(tmpDir).status();
+			expect(status.staged).toHaveLength(files.length);
+		});
+
+		it("is a no-op for an empty file list", async () => {
+			await initRepo(tmpDir);
+			await expect(addFiles(tmpDir, [])).resolves.toBeUndefined();
+
+			const status = await simpleGit(tmpDir).status();
+			expect(status.staged).toHaveLength(0);
+		});
+	});
+
+	describe("chunkPathsByLength", () => {
+		it("returns no batches for an empty list", () => {
+			expect(chunkPathsByLength([])).toEqual([]);
+		});
+
+		it("keeps everything in one batch when under budget", () => {
+			const files = ["a.txt", "b.txt", "c.txt"];
+			expect(chunkPathsByLength(files, 1000)).toEqual([files]);
+		});
+
+		it("splits into multiple batches once the budget is exceeded", () => {
+			// Each path costs 8 + 3 overhead = 11 chars; a budget of 25 fits two.
+			const files = ["aaaa.txt", "bbbb.txt", "cccc.txt", "dddd.txt", "eeee.txt"];
+			const batches = chunkPathsByLength(files, 25);
+
+			expect(batches).toEqual([
+				["aaaa.txt", "bbbb.txt"],
+				["cccc.txt", "dddd.txt"],
+				["eeee.txt"],
+			]);
+			// No path may be dropped or duplicated.
+			expect(batches.flat()).toEqual(files);
+		});
+
+		it("emits an oversized single path as its own batch rather than dropping it", () => {
+			const huge = `${"x".repeat(200)}.txt`;
+			const batches = chunkPathsByLength(["small.txt", huge, "other.txt"], 50);
+
+			expect(batches.flat()).toEqual(["small.txt", huge, "other.txt"]);
+			expect(batches).toContainEqual([huge]);
 		});
 	});
 

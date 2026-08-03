@@ -38,14 +38,79 @@ export async function isGitRepo(dirPath: string): Promise<boolean> {
 }
 
 /**
+ * Maximum number of characters of file-path arguments a single `git add`
+ * invocation may carry.
+ *
+ * Windows caps an entire `CreateProcess` command line at 32,767 characters, and
+ * simple-git spawns git directly (no shell), so that cap applies as-is. POSIX
+ * allows far more, but `ARG_MAX` is only 256 KB on macOS, so we batch there too.
+ * Both budgets leave headroom for the git executable path and the subcommand.
+ */
+const PATH_ARG_BUDGET = process.platform === "win32" ? 28_000 : 128_000;
+
+/** Per-argument overhead: separator/null terminator plus worst-case quoting. */
+const ARG_OVERHEAD = 3;
+
+/**
+ * Splits file paths into batches that each fit within the command-line budget.
+ *
+ * A path that exceeds the budget on its own is emitted as a single-item batch
+ * rather than skipped, so git surfaces a meaningful error instead of the caller
+ * silently losing a file.
+ *
+ * @param files - Relative file paths to batch
+ * @param budget - Maximum characters of path arguments per batch
+ * @returns Array of batches, each safe to pass to a single git invocation
+ */
+export function chunkPathsByLength(files: string[], budget = PATH_ARG_BUDGET): string[][] {
+	const batches: string[][] = [];
+	let current: string[] = [];
+	let currentLength = 0;
+
+	for (const file of files) {
+		const cost = file.length + ARG_OVERHEAD;
+		// Only close the batch if it already holds something -- otherwise an
+		// oversized single path would loop forever without ever being emitted.
+		if (current.length > 0 && currentLength + cost > budget) {
+			batches.push(current);
+			current = [];
+			currentLength = 0;
+		}
+		current.push(file);
+		currentLength += cost;
+	}
+
+	if (current.length > 0) {
+		batches.push(current);
+	}
+
+	return batches;
+}
+
+/**
  * Stages specified files in the git repository.
  * Always uses explicit file paths -- never `git add .`.
+ *
+ * Paths are staged in batches sized to stay under the platform command-line
+ * limit; passing them all at once fails with ENAMETOOLONG on large change sets
+ * (a few hundred deeply-nested paths is enough to exceed the Windows cap).
+ *
+ * Batching means staging is not atomic: if a later batch fails, earlier batches
+ * remain staged. That is safe here because `git add` is idempotent and callers
+ * commit only after every batch has succeeded.
  *
  * @param repoPath - Absolute path to the git repository
  * @param files - Array of relative file paths to stage
  */
 export async function addFiles(repoPath: string, files: string[]): Promise<void> {
-	await simpleGit(repoPath).add(files);
+	if (files.length === 0) {
+		return;
+	}
+
+	const git = simpleGit(repoPath);
+	for (const batch of chunkPathsByLength(files)) {
+		await git.add(batch);
+	}
 }
 
 /**
