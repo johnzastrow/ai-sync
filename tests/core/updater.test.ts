@@ -14,8 +14,8 @@ vi.mock("../../src/platform/paths.js", () => ({
 }));
 
 import { execSync } from "node:child_process";
-import { getInstallDir } from "../../src/platform/paths.js";
 import { performUpdate, startupUpdateCheck } from "../../src/core/updater.js";
+import { getInstallDir } from "../../src/platform/paths.js";
 
 const mockedGetInstallDir = vi.mocked(getInstallDir);
 const mockedExecSync = vi.mocked(execSync);

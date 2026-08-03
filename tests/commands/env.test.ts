@@ -14,6 +14,7 @@ vi.mock("../../src/platform/paths.js", async (importOriginal) => {
 
 let testInstallDir: string;
 
+import { registerEnvCommand } from "../../src/cli/commands/env.js";
 import {
 	getEnabledEnvironments,
 	isAutoDetecting,
@@ -21,7 +22,6 @@ import {
 	setEnabledEnvironments,
 } from "../../src/core/env-config.js";
 import { ALL_ENVIRONMENTS, getEnvironmentById } from "../../src/core/environment.js";
-import { registerEnvCommand } from "../../src/cli/commands/env.js";
 
 describe("env command logic", () => {
 	beforeEach(() => {

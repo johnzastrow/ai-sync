@@ -14,9 +14,9 @@ vi.mock("../../src/platform/paths.js", async (importOriginal) => {
 
 let testInstallDir: string;
 
-// Import after mock setup
-import { startupUpdateCheck, performUpdate } from "../../src/core/updater.js";
 import { registerUpdateCommand } from "../../src/cli/commands/update.js";
+// Import after mock setup
+import { performUpdate, startupUpdateCheck } from "../../src/core/updater.js";
 
 describe("updater", () => {
 	beforeEach(() => {

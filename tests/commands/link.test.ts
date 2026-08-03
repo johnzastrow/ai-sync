@@ -5,9 +5,9 @@ import { Command } from "commander";
 import { simpleGit } from "simple-git";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerLinkCommand } from "../../src/cli/commands/link.js";
+import type { Environment } from "../../src/core/environment.js";
 import { linkEnvironment, unlinkEnvironment } from "../../src/core/linker.js";
 import { detectRepoVersion } from "../../src/core/migration.js";
-import type { Environment } from "../../src/core/environment.js";
 import { addFiles, addRemote, commitFiles, initRepo } from "../../src/git/repo.js";
 import { canCreateSymlinks } from "../security/_can-symlink.js";
 

@@ -3,9 +3,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registerInstallSkillsCommand } from "../../src/cli/commands/install-skills.js";
 import { ClaudeEnvironment } from "../../src/core/environment.js";
 import { installSkills } from "../../src/core/skills.js";
-import { registerInstallSkillsCommand } from "../../src/cli/commands/install-skills.js";
 
 describe("install-skills", () => {
 	let tmpDir: string;

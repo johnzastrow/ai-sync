@@ -11,6 +11,6 @@
 	},
 	"assist": { "actions": { "source": { "organizeImports": "on" } } },
 	"files": {
-		"includes": ["**", "!**/dist/", "!**/node_modules/", "!**/coverage/"]
+		"includes": ["**", "!**/dist", "!**/node_modules", "!**/coverage"]
 	}
 }
