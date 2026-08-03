@@ -61,9 +61,7 @@ async function scanDir(
 		// Refuse pathological filenames per-segment (Windows reserved names,
 		// alternate-data-stream colons, trailing dots/spaces, embedded nulls).
 		if (!isSafeFilename(entry.name)) {
-			console.warn(
-				`ai-sync: skipping unsafe filename '${entry.name}' under ${dirPath}`,
-			);
+			console.warn(`ai-sync: skipping unsafe filename '${entry.name}' under ${dirPath}`);
 			continue;
 		}
 

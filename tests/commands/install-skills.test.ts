@@ -61,7 +61,9 @@ describe("install-skills", () => {
 		await fs.mkdir(path.join(claudeDir, "commands"), { recursive: true });
 
 		// Create a test environment that points to our tmp dir
-		const testEnv: InstanceType<typeof ClaudeEnvironment> = Object.create(ClaudeEnvironment.prototype);
+		const testEnv: InstanceType<typeof ClaudeEnvironment> = Object.create(
+			ClaudeEnvironment.prototype,
+		);
 		Object.defineProperty(testEnv, "id", { value: "claude" });
 		Object.defineProperty(testEnv, "displayName", { value: "Claude Code" });
 		testEnv.getConfigDir = () => claudeDir;

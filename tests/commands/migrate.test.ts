@@ -89,10 +89,7 @@ describe("migrate command (integration)", () => {
 
 			// Add allowlisted files at the root (v1 format)
 			await fs.writeFile(path.join(syncRepoDir, "CLAUDE.md"), "# Config");
-			await fs.writeFile(
-				path.join(syncRepoDir, "settings.json"),
-				JSON.stringify({ key: "value" }),
-			);
+			await fs.writeFile(path.join(syncRepoDir, "settings.json"), JSON.stringify({ key: "value" }));
 			await addFiles(syncRepoDir, ["CLAUDE.md", "settings.json"]);
 			await commitFiles(syncRepoDir, "add config files");
 			await simpleGit(syncRepoDir).push("origin", "main");
@@ -104,10 +101,7 @@ describe("migrate command (integration)", () => {
 			expect(result.message).toContain("Migrated");
 
 			// Verify files were moved to claude/ subdirectory
-			const claudeMd = await fs.readFile(
-				path.join(syncRepoDir, "claude", "CLAUDE.md"),
-				"utf-8",
-			);
+			const claudeMd = await fs.readFile(path.join(syncRepoDir, "claude", "CLAUDE.md"), "utf-8");
 			expect(claudeMd).toBe("# Config");
 
 			const settings = await fs.readFile(

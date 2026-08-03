@@ -164,16 +164,7 @@ describe("fragmenter", () => {
 		});
 
 		it("produces references in the index in document order", () => {
-			const content = [
-				"## First",
-				"aaa",
-				"",
-				"## Second",
-				"bbb",
-				"",
-				"## Third",
-				"ccc",
-			].join("\n");
+			const content = ["## First", "aaa", "", "## Second", "bbb", "", "## Third", "ccc"].join("\n");
 
 			const sectionMap = new Map([
 				["## First", "shared/first.md"],
@@ -184,11 +175,7 @@ describe("fragmenter", () => {
 			const result = splitMarkdownIntoFragments(content, sectionMap);
 			const parsed = parseIndex(result.indexContent);
 
-			expect(parsed.references).toEqual([
-				"shared/first.md",
-				"shared/second.md",
-				"shared/third.md",
-			]);
+			expect(parsed.references).toEqual(["shared/first.md", "shared/second.md", "shared/third.md"]);
 		});
 
 		it("infers scope from the first path segment", () => {

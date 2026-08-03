@@ -128,11 +128,7 @@ describe("git/repo", () => {
 			const files = ["aaaa.txt", "bbbb.txt", "cccc.txt", "dddd.txt", "eeee.txt"];
 			const batches = chunkPathsByLength(files, 25);
 
-			expect(batches).toEqual([
-				["aaaa.txt", "bbbb.txt"],
-				["cccc.txt", "dddd.txt"],
-				["eeee.txt"],
-			]);
+			expect(batches).toEqual([["aaaa.txt", "bbbb.txt"], ["cccc.txt", "dddd.txt"], ["eeee.txt"]]);
 			// No path may be dropped or duplicated.
 			expect(batches.flat()).toEqual(files);
 		});

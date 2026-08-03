@@ -57,9 +57,7 @@ describe("printFileChanges", () => {
 	});
 
 	it("includes the file path in each log line", () => {
-		const changes: FileChange[] = [
-			{ path: "CLAUDE.md", type: "modified" },
-		];
+		const changes: FileChange[] = [{ path: "CLAUDE.md", type: "modified" }];
 		printFileChanges(changes);
 		expect(consoleSpy).toHaveBeenCalledTimes(1);
 		const output = consoleSpy.mock.calls[0][0] as string;
@@ -67,9 +65,7 @@ describe("printFileChanges", () => {
 	});
 
 	it("includes the type indicator in each log line", () => {
-		const changes: FileChange[] = [
-			{ path: "file.txt", type: "added" },
-		];
+		const changes: FileChange[] = [{ path: "file.txt", type: "added" }];
 		printFileChanges(changes);
 		const output = consoleSpy.mock.calls[0][0] as string;
 		// Should contain the indicator character (A for added)
@@ -77,9 +73,7 @@ describe("printFileChanges", () => {
 	});
 
 	it("formats output with leading indentation", () => {
-		const changes: FileChange[] = [
-			{ path: "test.json", type: "deleted" },
-		];
+		const changes: FileChange[] = [{ path: "test.json", type: "deleted" }];
 		printFileChanges(changes);
 		const output = consoleSpy.mock.calls[0][0] as string;
 		// Output starts with two-space indent

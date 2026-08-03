@@ -176,10 +176,7 @@ describe("link command (integration)", () => {
 			await linkEnvironment(env, syncRepoDir, backupDir);
 
 			// Verify the file was seeded into the repo subdir
-			const repoContent = await fs.readFile(
-				path.join(syncRepoDir, "claude", "CLAUDE.md"),
-				"utf-8",
-			);
+			const repoContent = await fs.readFile(path.join(syncRepoDir, "claude", "CLAUDE.md"), "utf-8");
 			expect(repoContent).toBe("# Seeded Content");
 		});
 
@@ -406,7 +403,15 @@ describeSymlinks("link/unlink CLI action (integration)", () => {
 	it("prints error for unknown --env on link", async () => {
 		const { syncRepoDir } = await setupV2SyncRepo(tmpDir);
 		const program = createProgram();
-		await program.parseAsync(["node", "test", "link", "--repo", syncRepoDir, "--env", "nonexistent"]);
+		await program.parseAsync([
+			"node",
+			"test",
+			"link",
+			"--repo",
+			syncRepoDir,
+			"--env",
+			"nonexistent",
+		]);
 
 		const errOutput = errorSpy.mock.calls.map((c) => c[0]).join("\n");
 		expect(errOutput).toContain("not enabled");
@@ -416,7 +421,15 @@ describeSymlinks("link/unlink CLI action (integration)", () => {
 	it("prints error for unknown --env on unlink", async () => {
 		const { syncRepoDir } = await setupV2SyncRepo(tmpDir);
 		const program = createProgram();
-		await program.parseAsync(["node", "test", "unlink", "--repo", syncRepoDir, "--env", "nonexistent"]);
+		await program.parseAsync([
+			"node",
+			"test",
+			"unlink",
+			"--repo",
+			syncRepoDir,
+			"--env",
+			"nonexistent",
+		]);
 
 		const errOutput = errorSpy.mock.calls.map((c) => c[0]).join("\n");
 		expect(errOutput).toContain("not enabled");

@@ -1,1 +1,7 @@
+# Normalize text to LF in the repo and check it out as LF on every platform.
+# Without this, core.autocrlf=true gives Windows checkouts CRLF working copies,
+# which Biome (lineEnding defaults to "lf") flags as a format error in every
+# file. Must precede the binary rules below so they take precedence.
+* text=auto eol=lf
+
 *.pptx filter=lfs diff=lfs merge=lfs -text

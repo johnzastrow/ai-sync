@@ -70,7 +70,9 @@ describe("tool-manifest", () => {
 		});
 
 		it("rejects unknown strategy type", () => {
-			expect(() => VerifyStrategySchema.parse({ type: "shell-command", cmd: "which git" })).toThrow();
+			expect(() =>
+				VerifyStrategySchema.parse({ type: "shell-command", cmd: "which git" }),
+			).toThrow();
 		});
 
 		it("rejects free-form string (old format)", () => {
