@@ -43,6 +43,16 @@ async function readRefContent(
 }
 
 /**
+ * Folds CRLF to LF so line-ending-only differences are not reported as drift.
+ * On Windows the sync-repo working tree and the live config can hold CRLF
+ * while `git show` returns the LF blob git stores (eol=lf / autocrlf); git
+ * itself treats those as unchanged, and so must the drift report.
+ */
+function normalizeEol(content: string | null): string | null {
+	return content === null ? null : content.replace(/\r\n/g, "\n");
+}
+
+/**
  * Returns true when the local repo has a tracking ref for `<ref>` (e.g.
  * `origin/main`). Avoids throwing when the remote has never been fetched.
  */
@@ -105,7 +115,7 @@ export async function classifyDriftForEnv(
 		// base = HEAD (sync repo content as currently committed)
 		let baseContent: string | null = null;
 		try {
-			baseContent = await fs.readFile(path.join(repoSubdir, relativePath), "utf-8");
+			baseContent = normalizeEol(await fs.readFile(path.join(repoSubdir, relativePath), "utf-8"));
 		} catch {
 			// File not present in repo HEAD
 		}
@@ -114,7 +124,7 @@ export async function classifyDriftForEnv(
 		let localContent: string | null = null;
 		try {
 			const raw = await fs.readFile(path.join(configDir, relativePath), "utf-8");
-			localContent = rewrite ? rewritePathsForRepo(raw, homeDir) : raw;
+			localContent = normalizeEol(rewrite ? rewritePathsForRepo(raw, homeDir) : raw);
 		} catch {
 			// File not present locally
 		}
@@ -122,7 +132,7 @@ export async function classifyDriftForEnv(
 		// remote = origin/main:<repoSubdirRel>/<relativePath>
 		const remoteRelPath = repoSubdirRel ? `${repoSubdirRel}/${relativePath}` : relativePath;
 		const remoteContent = remoteAvailable
-			? await readRefContent(syncRepoDir, remoteRef, remoteRelPath)
+			? normalizeEol(await readRefContent(syncRepoDir, remoteRef, remoteRelPath))
 			: baseContent;
 
 		const localChanged = localContent !== baseContent;

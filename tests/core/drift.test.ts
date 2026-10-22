@@ -156,6 +156,32 @@ describe("classifyDriftForEnv", () => {
 		expect(report.bothChanged).toEqual([]);
 	});
 
+	it("ignores CRLF-only differences between the working tree and the committed blob", async () => {
+		// Windows checkout: git stores LF, but the sync-repo working tree and the
+		// live config both hold CRLF. Git treats this as unchanged; so must drift.
+		await fs.writeFile(path.join(fx.syncRepoDir, "claude", "CLAUDE.md"), "base claude\r\n");
+		await fs.writeFile(path.join(fx.claudeConfigDir, "CLAUDE.md"), "base claude\r\n");
+		const report = await classifyDriftForEnv(fx.claudeEnv, fx.syncRepoDir, fx.homeDir);
+		expect(report.localOnly).toEqual([]);
+		expect(report.remoteOnly).toEqual([]);
+		expect(report.bothChanged).toEqual([]);
+	});
+
+	it("ignores a CRLF-only local copy against an LF working tree", async () => {
+		await fs.writeFile(path.join(fx.claudeConfigDir, "CLAUDE.md"), "base claude\r\n");
+		const report = await classifyDriftForEnv(fx.claudeEnv, fx.syncRepoDir, fx.homeDir);
+		expect(report.localOnly).toEqual([]);
+	});
+
+	it("still reports a real remote change when the working tree is CRLF", async () => {
+		await fs.writeFile(path.join(fx.syncRepoDir, "claude", "CLAUDE.md"), "base claude\r\n");
+		await fs.writeFile(path.join(fx.claudeConfigDir, "CLAUDE.md"), "base claude\r\n");
+		await pushRemoteChange(fx, "claude/CLAUDE.md", "remote change\n");
+		const report = await classifyDriftForEnv(fx.claudeEnv, fx.syncRepoDir, fx.homeDir);
+		expect(report.remoteOnly).toEqual(["CLAUDE.md"]);
+		expect(report.localOnly).toEqual([]);
+	});
+
 	it("counts a both-changed conflict", async () => {
 		await fs.writeFile(path.join(fx.claudeConfigDir, "CLAUDE.md"), "local change\n");
 		await pushRemoteChange(fx, "claude/CLAUDE.md", "remote change\n");
