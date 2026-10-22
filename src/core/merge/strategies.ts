@@ -3,7 +3,8 @@
  *
  * Routes a MergeInput through a resolver based on its file type, then
  * applies post-merge validation:
- *   - markdown / ai-freeform → resolver output is returned verbatim
+ *   - markdown / ai-freeform → resolver output is returned verbatim if it
+ *                              passes looksLikeMerge() (else freeform-sanity)
  *   - json / ai-validated    → JSON.parse the merged content (throw → json-parse)
  *   - yaml / ai-validated    → yaml.parse the merged content (throw → yaml-parse)
  *   - unknown / keep-local   → short-circuit without calling the resolver
@@ -25,6 +26,7 @@ export type StrategyName = "ai-freeform" | "ai-validated" | "keep-local";
 export type StrategyReason =
 	| "json-parse"
 	| "yaml-parse"
+	| "freeform-sanity"
 	| "unsupported-type"
 	| "keep-local-override";
 
@@ -111,6 +113,61 @@ function pickStrategy(
 	}
 }
 
+/** Minimum distinct source lines before the line-overlap check applies. */
+const MIN_SOURCE_LINES = 5;
+/** Share of merged lines that must come from base/local/remote. */
+const MIN_LINE_OVERLAP = 0.5;
+/** Shorter side must be at least this long before the length check applies. */
+const MIN_LENGTH_FOR_RATIO = 1000;
+/** Merged output shorter than this share of the shorter side is rejected. */
+const MIN_LENGTH_RATIO = 0.25;
+/** The adapters' scratch dirs; a reply naming one is talking about the prompt, not merging. */
+const SCRATCH_PATH_RE = /ai-sync-(merge|summary)-\d+-[0-9a-f]+|prompt\.txt/;
+
+function sourceLines(text: string): string[] {
+	return text
+		.split(/\r?\n/)
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0);
+}
+
+/**
+ * Cheap plausibility check for ai-freeform output, which has no parser to
+ * catch garbage. A resolver that fails in prose ("I can't read that file...")
+ * still exits 0 with non-empty stdout; without this check that prose would be
+ * staged as the merged file and `resolve accept` would overwrite the real one.
+ *
+ * A genuine merge is built mostly from lines of its inputs, so it is rejected
+ * when it names the resolver's scratch dir, when most of its lines appear in
+ * none of base/local/remote, or when it is a small fraction of the shorter
+ * side. The overlap and length checks are skipped for tiny inputs, where they
+ * would reject legitimate rewrites.
+ */
+export function looksLikeMerge(
+	merged: string,
+	base: string | null,
+	local: string,
+	remote: string,
+): boolean {
+	const inputs = [base ?? "", local, remote];
+	if (SCRATCH_PATH_RE.test(merged) && !inputs.some((s) => SCRATCH_PATH_RE.test(s))) {
+		return false;
+	}
+
+	const known = new Set(inputs.flatMap(sourceLines));
+	const out = sourceLines(merged);
+	if (known.size >= MIN_SOURCE_LINES && out.length > 0) {
+		const matched = out.filter((l) => known.has(l)).length;
+		if (matched / out.length < MIN_LINE_OVERLAP) return false;
+	}
+
+	const shorter = Math.min(local.length, remote.length);
+	if (shorter >= MIN_LENGTH_FOR_RATIO && merged.length < shorter * MIN_LENGTH_RATIO) {
+		return false;
+	}
+	return true;
+}
+
 function isStrategyName(s: string): s is StrategyName {
 	return s === "ai-freeform" || s === "ai-validated" || s === "keep-local";
 }
@@ -142,6 +199,9 @@ export async function mergeWithStrategy(
 	const notes = output.notes;
 
 	if (strategy === "ai-freeform") {
+		if (!looksLikeMerge(merged, input.base, input.local, input.remote)) {
+			return { ok: false, reason: "freeform-sanity", fileType };
+		}
 		return { ok: true, mergedContent: merged, fileType, notes };
 	}
 

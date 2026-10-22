@@ -2,7 +2,7 @@ import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { defaultExecFn, type ExecFn } from "./adapters/claude-cli.js";
+import { CLAUDE_PRINT_ARGS, defaultExecFn, type ExecFn } from "./adapters/claude-cli.js";
 import type { AdapterName } from "./adapters/index.js";
 import { ResolverError } from "./resolver.js";
 
@@ -12,10 +12,15 @@ import { ResolverError } from "./resolver.js";
  * can drive any configured resolver with a custom prompt without
  * duplicating the merge-specific MergeInput plumbing.
  */
-function buildArgv(resolver: AdapterName, promptFile: string): { binary: string; args: string[] } {
+function buildArgv(
+	resolver: AdapterName,
+	promptFile: string,
+	prompt: string,
+): { binary: string; args: string[]; input?: string } {
 	switch (resolver) {
 		case "claude":
-			return { binary: "claude", args: ["-p", promptFile] };
+			// claude reads the prompt from stdin; see CLAUDE_PRINT_ARGS.
+			return { binary: "claude", args: [...CLAUDE_PRINT_ARGS], input: prompt };
 		case "codex":
 			return { binary: "codex", args: ["exec", "--prompt-file", promptFile] };
 		case "opencode":
@@ -59,12 +64,12 @@ export async function summarizeWithResolver(
 		);
 	}
 
-	const { binary, args } = buildArgv(resolver, promptFile);
+	const { binary, args, input } = buildArgv(resolver, promptFile, prompt);
 	const controller = new AbortController();
 	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	let result: { stdout: string; stderr: string };
 	try {
-		result = await execFn(binary, args, { signal: controller.signal });
+		result = await execFn(binary, args, { signal: controller.signal, input });
 	} catch (err) {
 		const e = err as NodeJS.ErrnoException & { code?: string };
 		if (controller.signal.aborted || e.code === "ABORT_ERR" || e.name === "AbortError") {

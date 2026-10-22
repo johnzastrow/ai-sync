@@ -2,7 +2,11 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createClaudeAdapter, type ExecFn } from "../../../src/core/merge/adapters/claude-cli.js";
+import {
+	CLAUDE_PRINT_ARGS,
+	createClaudeAdapter,
+	type ExecFn,
+} from "../../../src/core/merge/adapters/claude-cli.js";
 import { ResolverError } from "../../../src/core/merge/resolver.js";
 
 let tmpRoot: string;
@@ -37,13 +41,11 @@ describe("createClaudeAdapter", () => {
 	});
 
 	describe("resolve()", () => {
-		it("returns stdout as mergedContent on success", async () => {
-			const execFn: ExecFn = async (cmd, args) => {
+		it("returns stdout as mergedContent on success, prompt piped on stdin", async () => {
+			const execFn: ExecFn = async (cmd, args, opts) => {
 				expect(cmd).toBe("claude");
-				expect(args[0]).toBe("-p");
-				// args[1] should be a tempdir-scoped prompt file
-				expect(args[1]).toContain("prompt.txt");
-				const promptContent = await fs.readFile(args[1], "utf-8");
+				expect(args).toEqual([...CLAUDE_PRINT_ARGS]);
+				const promptContent = opts?.input ?? "";
 				expect(promptContent).toContain("CLAUDE.md");
 				expect(promptContent).toContain("local body");
 				expect(promptContent).toContain("remote body");
@@ -62,9 +64,8 @@ describe("createClaudeAdapter", () => {
 		});
 
 		it("supports null base (new file on both sides)", async () => {
-			const execFn: ExecFn = async (_cmd, args) => {
-				const promptContent = await fs.readFile(args[1], "utf-8");
-				expect(promptContent).toContain("no common ancestor");
+			const execFn: ExecFn = async (_cmd, _args, opts) => {
+				expect(opts?.input).toContain("no common ancestor");
 				return { stdout: "merged", stderr: "" };
 			};
 			const adapter = createClaudeAdapter(execFn, { tmpdirRoot: tmpRoot });
@@ -150,9 +151,7 @@ describe("createClaudeAdapter", () => {
 		});
 
 		it("preserves tempdir on failure with path surfaced via error", async () => {
-			let capturedTempdir: string | undefined;
-			const execFn: ExecFn = async (_cmd, args) => {
-				capturedTempdir = path.dirname(args[1]);
+			const execFn: ExecFn = async () => {
 				throw new Error("boom");
 			};
 			const adapter = createClaudeAdapter(execFn, { tmpdirRoot: tmpRoot });
@@ -168,17 +167,36 @@ describe("createClaudeAdapter", () => {
 				expect.fail("expected throw");
 			} catch (err) {
 				expect(err).toBeInstanceOf(ResolverError);
-				expect((err as ResolverError).tempdir).toBe(capturedTempdir);
-				// tempdir should still exist for postmortem
-				const stat = await fs.stat(capturedTempdir as string);
-				expect(stat.isDirectory()).toBe(true);
+				const tempdir = (err as ResolverError).tempdir as string;
+				expect(path.dirname(tempdir)).toBe(tmpRoot);
+				// tempdir and the prompt should still exist for postmortem
+				const prompt = await fs.readFile(path.join(tempdir, "prompt.txt"), "utf-8");
+				expect(prompt).toContain("<LOCAL>");
 			}
 		});
 
 		it("cleans up tempdir on success", async () => {
-			let capturedTempdir: string | undefined;
-			const execFn: ExecFn = async (_cmd, args) => {
-				capturedTempdir = path.dirname(args[1]);
+			const execFn: ExecFn = async () => ({ stdout: "merged", stderr: "" });
+			const adapter = createClaudeAdapter(execFn, { tmpdirRoot: tmpRoot });
+			await adapter.resolve({
+				relativePath: "x.md",
+				envName: "claude",
+				base: null,
+				local: "a",
+				remote: "b",
+				fileType: { kind: "markdown" },
+			});
+			expect(await fs.readdir(tmpRoot)).toEqual([]);
+		});
+
+		it("never passes the prompt file path as an argument", async () => {
+			// Regression: `claude -p <file>` treats the path as the prompt text, so
+			// the model saw only a path and replied in prose about not reading it.
+			const execFn: ExecFn = async (_cmd, args, opts) => {
+				expect(args.some((a) => a.includes("prompt.txt"))).toBe(false);
+				expect(args).toContain("--tools");
+				expect(args[args.indexOf("--tools") + 1]).toBe("");
+				expect(opts?.input).toContain("<REMOTE>");
 				return { stdout: "merged", stderr: "" };
 			};
 			const adapter = createClaudeAdapter(execFn, { tmpdirRoot: tmpRoot });
@@ -190,7 +208,6 @@ describe("createClaudeAdapter", () => {
 				remote: "b",
 				fileType: { kind: "markdown" },
 			});
-			await expect(fs.stat(capturedTempdir as string)).rejects.toMatchObject({ code: "ENOENT" });
 		});
 	});
 });

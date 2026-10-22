@@ -22,12 +22,29 @@ describe("summarizeWithResolver", () => {
 		});
 		expect(out).toBe("summary text");
 		expect(execFn).toHaveBeenCalledOnce();
-		const [bin, args] = execFn.mock.calls[0];
+		const [bin, args, opts] = execFn.mock.calls[0];
 		expect(bin).toBe("claude");
 		expect(args[0]).toBe("-p");
-		const promptFile = args[1] as string;
-		// Tempdir is cleaned on success — file should NOT exist anymore.
-		await expect(fs.access(promptFile)).rejects.toBeDefined();
+		// Tempdir is cleaned on success.
+		const leftovers = await fs.readdir(tmpRoot);
+		expect(leftovers).toEqual([]);
+		expect(opts.input).toBe("PROMPT");
+	});
+
+	it("pipes the prompt to claude on stdin with tools disabled, never as a path", async () => {
+		const execFn = vi.fn().mockResolvedValue({ stdout: "ok", stderr: "" });
+		await summarizeWithResolver("claude", "PROMPT", { execFn, tmpdirRoot: tmpRoot });
+		const [, args, opts] = execFn.mock.calls[0];
+		expect(args).toEqual([
+			"-p",
+			"--tools",
+			"",
+			"--no-session-persistence",
+			"--output-format",
+			"text",
+		]);
+		expect(args.some((a: string) => a.includes("prompt.txt"))).toBe(false);
+		expect(opts.input).toBe("PROMPT");
 	});
 
 	it("uses codex CLI flags for codex resolver", async () => {

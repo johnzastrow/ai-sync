@@ -21,16 +21,69 @@ const execFileAsync = promisify(childProcess.execFile);
 export type ExecFn = (
 	cmd: string,
 	args: string[],
-	options?: { signal?: AbortSignal },
+	options?: { signal?: AbortSignal; input?: string },
 ) => Promise<{ stdout: string; stderr: string }>;
 
 export function defaultExecFn(
 	cmd: string,
 	args: string[],
-	options?: { signal?: AbortSignal },
+	options?: { signal?: AbortSignal; input?: string },
 ): Promise<{ stdout: string; stderr: string }> {
-	return execFileAsync(cmd, args, { signal: options?.signal });
+	if (options?.input === undefined) {
+		return execFileAsync(cmd, args, { signal: options?.signal });
+	}
+	return spawnWithInput(cmd, args, options.input, options.signal);
 }
+
+/**
+ * Runs `cmd` with `input` written to its stdin. execFile cannot feed stdin,
+ * and the prompt is too large to pass as an argument (Windows caps a command
+ * line at ~32K chars), so prompts go through a pipe instead. Rejects with an
+ * AbortError on signal abort and with an Error on non-zero exit, matching
+ * execFile's failure shapes so callers can treat both paths the same.
+ */
+function spawnWithInput(
+	cmd: string,
+	args: string[],
+	input: string,
+	signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string }> {
+	return new Promise((resolve, reject) => {
+		const child = childProcess.spawn(cmd, args, { signal, stdio: ["pipe", "pipe", "pipe"] });
+		const stdout: Buffer[] = [];
+		const stderr: Buffer[] = [];
+		child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
+		child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
+		child.on("error", reject);
+		// EPIPE here means the child exited early; the close handler reports it.
+		child.stdin.on("error", () => {});
+		child.on("close", (code) => {
+			const out = Buffer.concat(stdout).toString("utf-8");
+			const err = Buffer.concat(stderr).toString("utf-8");
+			if (code === 0) {
+				resolve({ stdout: out, stderr: err });
+			} else {
+				reject(new Error(`Command failed with exit code ${code}: ${err.trim()}`));
+			}
+		});
+		child.stdin.end(input, "utf-8");
+	});
+}
+
+/**
+ * argv for a tool-less, one-shot `claude` call that reads its prompt from
+ * stdin. `-p <file>` does not work: claude treats the argument as the prompt
+ * text, so the model only ever sees a file path. With tools disabled the model
+ * cannot wander off reading files and can only answer with text.
+ */
+export const CLAUDE_PRINT_ARGS: readonly string[] = [
+	"-p",
+	"--tools",
+	"",
+	"--no-session-persistence",
+	"--output-format",
+	"text",
+];
 
 export interface ClaudeAdapterOptions {
 	/** Hard timeout in milliseconds for `resolve()`. Default 60_000. */
@@ -45,7 +98,8 @@ export interface ClaudeAdapterOptions {
  * Creates a MergeResolver backed by the `claude` CLI.
  *
  * `available()` runs `claude --version` via the injected execFn.
- * `resolve()` writes the prompt to a tempdir, invokes `claude -p <file>`,
+ * `resolve()` writes the prompt to a tempdir (kept for postmortem), pipes it
+ * to `claude -p` on stdin with all tools disabled (see CLAUDE_PRINT_ARGS),
  * and returns stdout as the merged content. A hard timeout is enforced via
  * AbortController. On success the tempdir is cleaned up; on failure it is
  * preserved and the path is surfaced via ResolverError.tempdir.
@@ -101,7 +155,10 @@ export function createClaudeAdapter(
 			const timer = setTimeout(() => controller.abort(), timeoutMs);
 			let result: { stdout: string; stderr: string };
 			try {
-				result = await execFn(binary, ["-p", promptFile], { signal: controller.signal });
+				result = await execFn(binary, [...CLAUDE_PRINT_ARGS], {
+					signal: controller.signal,
+					input: prompt,
+				});
 			} catch (err) {
 				const e = err as NodeJS.ErrnoException & { code?: string; killed?: boolean };
 				if (controller.signal.aborted || e.code === "ABORT_ERR" || e.name === "AbortError") {
