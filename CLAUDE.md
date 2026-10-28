@@ -24,7 +24,9 @@ node dist/cli.js push --repo-path /tmp/test-repo --claude-dir /tmp/test-claude
 
 Set `AI_SYNC_DEV=1` in your dev shell to enforce this: with it set, `push`/`pull`
 refuse to operate on the real default sync repo (`~/.ai-sync`) and require an
-explicit `--repo-path` to a throwaway directory. Tests already use temp dirs.
+explicit `--repo-path` to a throwaway directory. Tests are sandboxed: `tests/setup.ts`
+points `HOME`/`USERPROFILE` at a temp dir (and clears `XDG_CONFIG_HOME`/`CODEX_HOME`)
+before any test loads, and aborts the run if that fails.
 
 ### CLI surface
 
@@ -61,6 +63,26 @@ to opt out.
 - Git operations use explicit file paths, never `git add .`
 - Allowlist-based sync: only files in `DEFAULT_SYNC_TARGETS` / `PLUGIN_SYNC_PATTERNS` are synced
 - Path rewriting: absolute paths ↔ `{{HOME}}` tokens for cross-platform portability
+
+## Versioning & changelog
+
+Semver ([2.0.0](https://semver.org/spec/v2.0.0.html)); `package.json` is the single source
+of the version (the CLI reads it for `--version`).
+
+- Every user-visible change adds a line under `## [Unreleased]` in `CHANGELOG.md`
+  (Keep a Changelog sections: Added / Changed / Deprecated / Removed / Fixed / Security),
+  in the same PR as the change. Pure refactors, tests, and CI tweaks may skip it.
+- Bump on release, by the largest change in `[Unreleased]`:
+  - **MAJOR** — breaking: sync-repo format change needing `migrate`, removed/renamed
+    command or flag, or a sync-target change that drops files users rely on.
+  - **MINOR** — new command/flag/environment, or a backward-compatible behavior change
+    (including adding or removing a sync target).
+  - **PATCH** — bug fixes, dependency bumps, docs.
+  - While on 0.x, breaking changes may ship as MINOR but must be called out in the entry.
+- Release steps: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty
+  `[Unreleased]`; set the version with `npm version X.Y.Z --no-git-tag-version` (updates
+  `package-lock.json` too); update the compare links at the bottom of the changelog;
+  commit as `chore(release): vX.Y.Z`; tag `vX.Y.Z` (three parts only — no `v0.2.3.1`).
 
 ## Workflow
 

@@ -69,7 +69,6 @@ export class ClaudeEnvironment implements Environment, FragmentCapable {
 		return [
 			"plugins/blocklist.json",
 			"plugins/known_marketplaces.json",
-			"plugins/marketplaces/",
 			"plugins/installed_plugins.json",
 		];
 	}

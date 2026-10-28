@@ -26,7 +26,6 @@ export const DEFAULT_SYNC_TARGETS: readonly string[] = [
 export const PLUGIN_SYNC_PATTERNS: readonly string[] = [
 	"plugins/blocklist.json",
 	"plugins/known_marketplaces.json",
-	"plugins/marketplaces/",
 	"plugins/installed_plugins.json",
 ] as const;
 
@@ -37,8 +36,14 @@ export const PLUGIN_SYNC_PATTERNS: readonly string[] = [
  * plugins/cache/ and plugins/data/ are deliberately NOT synced: they are
  * machine-local, reconstructable plugin payloads plus churny bookkeeping
  * (.in_use/.orphaned_at/.gcs-sha). Each machine rebuilds them from the synced
- * declarations (installed_plugins.json, known_marketplaces.json, marketplaces/).
+ * declarations (installed_plugins.json, known_marketplaces.json).
  * Syncing them only adds cross-machine churn and bloat.
+ *
+ * plugins/marketplaces/ is likewise left out of PLUGIN_SYNC_PATTERNS rather
+ * than listed here: it is a clone of each marketplace that Claude Code
+ * refreshes on its own schedule, so copies on different machines drift and
+ * every pull turned into hundreds of meaningless conflicts. Each machine
+ * re-clones it from known_marketplaces.json.
  */
 export const PLUGIN_IGNORE_PATTERNS: readonly string[] = [
 	"plugins/install-counts-cache.json",

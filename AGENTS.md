@@ -49,6 +49,26 @@ to opt out.
 - Allowlist-based sync: only files in `DEFAULT_SYNC_TARGETS` / `PLUGIN_SYNC_PATTERNS` are synced
 - Path rewriting: absolute paths ↔ `{{HOME}}` tokens for cross-platform portability
 
+## Versioning & changelog
+
+Semver ([2.0.0](https://semver.org/spec/v2.0.0.html)); `package.json` is the single source
+of the version (the CLI reads it for `--version`).
+
+- Every user-visible change adds a line under `## [Unreleased]` in `CHANGELOG.md`
+  (Keep a Changelog sections: Added / Changed / Deprecated / Removed / Fixed / Security),
+  in the same PR as the change. Pure refactors, tests, and CI tweaks may skip it.
+- Bump on release, by the largest change in `[Unreleased]`:
+  - **MAJOR** — breaking: sync-repo format change needing `migrate`, removed/renamed
+    command or flag, or a sync-target change that drops files users rely on.
+  - **MINOR** — new command/flag/environment, or a backward-compatible behavior change
+    (including adding or removing a sync target).
+  - **PATCH** — bug fixes, dependency bumps, docs.
+  - While on 0.x, breaking changes may ship as MINOR but must be called out in the entry.
+- Release steps: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty
+  `[Unreleased]`; set the version with `npm version X.Y.Z --no-git-tag-version` (updates
+  `package-lock.json` too); update the compare links at the bottom of the changelog;
+  commit as `chore(release): vX.Y.Z`; tag `vX.Y.Z` (three parts only — no `v0.2.3.1`).
+
 ## Auto-merge authority for auto-implement PRs
 
 Admin-merge `auto-implement` PRs (`gh pr merge <#> --admin --squash --delete-branch`) when:
