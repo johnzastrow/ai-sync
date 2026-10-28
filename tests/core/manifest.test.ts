@@ -33,15 +33,14 @@ describe("manifest", () => {
 	});
 
 	describe("PLUGIN_SYNC_PATTERNS", () => {
-		it("contains 4 plugin sync patterns", () => {
-			expect(PLUGIN_SYNC_PATTERNS).toHaveLength(4);
+		it("contains 3 plugin sync patterns", () => {
+			expect(PLUGIN_SYNC_PATTERNS).toHaveLength(3);
 		});
 
 		it("contains the expected plugin sync patterns", () => {
 			const expected = [
 				"plugins/blocklist.json",
 				"plugins/known_marketplaces.json",
-				"plugins/marketplaces/",
 				"plugins/installed_plugins.json",
 			];
 			expect([...PLUGIN_SYNC_PATTERNS].sort()).toEqual([...expected].sort());
@@ -50,6 +49,7 @@ describe("manifest", () => {
 		it("does NOT sync the machine-local plugin cache or data dirs", () => {
 			expect(PLUGIN_SYNC_PATTERNS).not.toContain("plugins/cache/");
 			expect(PLUGIN_SYNC_PATTERNS).not.toContain("plugins/data/");
+			expect(PLUGIN_SYNC_PATTERNS).not.toContain("plugins/marketplaces/");
 		});
 	});
 
@@ -123,8 +123,8 @@ describe("manifest", () => {
 			expect(isPathAllowed("plugins/install-counts-cache.json")).toBe(false);
 		});
 
-		it("allows files nested under plugin sync directories", () => {
-			expect(isPathAllowed("plugins/marketplaces/some-repo/file.md")).toBe(true);
+		it("rejects files under plugins/marketplaces/ (machine-local clones, not synced)", () => {
+			expect(isPathAllowed("plugins/marketplaces/some-repo/file.md")).toBe(false);
 		});
 
 		it("rejects files under plugins/data/ directory (machine-local, not synced)", () => {
