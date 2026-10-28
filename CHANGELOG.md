@@ -39,6 +39,11 @@ which were never versioned, plus the plugin-marketplace exclusion below.
 
 ### Fixed
 
+- **Test suite could delete the developer's real config.** Commands such as `link`,
+  `push`, and `pull` resolve config dirs from the real home directory, and a `link`
+  CLI test moved the real `~/.claude` into a temp dir that was then deleted.
+  `tests/setup.ts` now sandboxes `HOME`/`USERPROFILE` (clearing `XDG_CONFIG_HOME` and
+  `CODEX_HOME`) and fails closed; `tests/test-isolation.test.ts` guards it.
 - AI merge passed the prompt file's *path* to `claude -p` instead of its contents, so
   every merge timed out and fell back to keep-local. The prompt is now piped on stdin,
   and non-merge output is rejected.

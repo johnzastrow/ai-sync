@@ -24,7 +24,9 @@ node dist/cli.js push --repo-path /tmp/test-repo --claude-dir /tmp/test-claude
 
 Set `AI_SYNC_DEV=1` in your dev shell to enforce this: with it set, `push`/`pull`
 refuse to operate on the real default sync repo (`~/.ai-sync`) and require an
-explicit `--repo-path` to a throwaway directory. Tests already use temp dirs.
+explicit `--repo-path` to a throwaway directory. Tests are sandboxed: `tests/setup.ts`
+points `HOME`/`USERPROFILE` at a temp dir (and clears `XDG_CONFIG_HOME`/`CODEX_HOME`)
+before any test loads, and aborts the run if that fails.
 
 ### CLI surface
 

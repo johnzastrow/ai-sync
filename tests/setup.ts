@@ -1,3 +1,8 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { afterAll } from "vitest";
+
 /**
  * Global test setup: give git a deterministic author/committer identity.
  *
@@ -26,6 +31,38 @@ process.env.GIT_COMMITTER_EMAIL ??= "test@ai-sync.invalid";
  * GIT_CONFIG_* env vars sets it globally for every git child process without
  * touching the user's real gitconfig, and fixes all such fixtures at once.
  */
+/**
+ * Sandbox the home directory so no test can touch the developer's real config.
+ *
+ * Several code paths resolve config dirs from the environment rather than from
+ * options -- e.g. the link/unlink, push, and pull commands call
+ * getEnabledEnvironmentInstances(), whose getConfigDir() is os.homedir()-based.
+ * A test that drove `link` through the CLI once moved the real ~/.claude into
+ * its temp dir and then deleted it in afterEach, wiping the developer's config.
+ *
+ * os.homedir() reads HOME on POSIX and USERPROFILE on Windows; the OpenCode and
+ * Codex envs prefer XDG_CONFIG_HOME / CODEX_HOME when set, so those are cleared
+ * to fall back to the sandboxed home. setupFiles run before each test file's
+ * imports, so every module sees the sandbox.
+ */
+const realHome = os.homedir();
+const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), "ai-sync-test-home-"));
+process.env.HOME = sandboxHome;
+process.env.USERPROFILE = sandboxHome;
+delete process.env.XDG_CONFIG_HOME;
+delete process.env.CODEX_HOME;
+
+// Fail closed: abort the run rather than risk the real home if redirection failed.
+if (os.homedir() !== sandboxHome || os.homedir() === realHome) {
+	throw new Error(
+		`Test home sandbox failed: os.homedir() is ${os.homedir()}, expected ${sandboxHome}`,
+	);
+}
+
+afterAll(() => {
+	fs.rmSync(sandboxHome, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+});
+
 if (process.env.GIT_CONFIG_COUNT === undefined) {
 	process.env.GIT_CONFIG_COUNT = "1";
 	process.env.GIT_CONFIG_KEY_0 = "init.defaultBranch";
